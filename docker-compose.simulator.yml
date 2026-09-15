@@ -8,7 +8,11 @@
 # None and anonymous endpoints, which is exactly what acceptance test 3 checks.
 services:
   lads-simulator:
-    image: ghcr.io/spectaris/lads-reference-server:latest
+    # Built from the public LADS sample server sources; no official image is
+    # published for the reference server.
+    build:
+      context: .
+      dockerfile: deploy/simulator/Dockerfile
     container_name: lads-simulator
     ports:
       - "4840:4840"
