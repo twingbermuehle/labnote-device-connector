@@ -24,7 +24,7 @@ export function StatusPill({ status }: { status: DeviceStatus | string }) {
   return (
     <span
       className={`rounded-full border px-2 py-0.5 font-mono text-[0.65rem] uppercase tracking-[0.12em] ${
-        tone[status] ?? tone.unknown
+        tone[status] ?? tone['unknown']
       }`}
     >
       {status}
@@ -36,7 +36,7 @@ export function StatusDot({ status }: { status: string }) {
   return (
     <span
       aria-hidden
-      className={`inline-block size-2.5 shrink-0 rounded-full ${dot[status] ?? dot.unknown}`}
+      className={`inline-block size-2.5 shrink-0 rounded-full ${dot[status] ?? dot['unknown']}`}
     />
   );
 }

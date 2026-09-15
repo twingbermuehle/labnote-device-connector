@@ -86,7 +86,7 @@ function Setup() {
           <Field label="Model" value="1260 Infinity II" />
           <Field label="Instrument type" value="hplc" />
           <Field label="Instrument node" value="ns=2;i=5001" mono />
-          <Field label="Mapping profile" value={profileOptions[0].label} />
+          <Field label="Mapping profile" value={profileOptions[0]!.label} />
           <Field label="Default units" value="min / mAU" mono />
         </div>
         <p className="mt-4 text-xs text-muted-foreground">
