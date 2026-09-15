@@ -87,6 +87,17 @@ func (f *fakeLabNote) setOffline(v bool) {
 	f.mu.Unlock()
 }
 
+// newClient returns an ingest client that trusts this test server's
+// self-signed certificate. Production clients always verify TLS normally.
+func (f *fakeLabNote) newClient() *labnote.Client {
+	return labnote.New(
+		f.server.URL,
+		func() (string, error) { return "test-key", nil },
+		"test",
+		labnote.WithHTTPClient(f.server.Client()),
+	)
+}
+
 func (f *fakeLabNote) results() []model.Result {
 	f.mu.Lock()
 	defer f.mu.Unlock()
