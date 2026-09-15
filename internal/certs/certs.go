@@ -118,6 +118,31 @@ func (s *Store) ClientCertDER() ([]byte, error) {
 	return block.Bytes, nil
 }
 
+// ClientPrivateKey returns the client RSA private key. OPC UA
+// certificate-based user authentication signs the server nonce with it.
+func (s *Store) ClientPrivateKey() (*rsa.PrivateKey, error) {
+	raw, err := os.ReadFile(s.keyPath)
+	if err != nil {
+		return nil, err
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		return nil, errors.New("client private key is not valid PEM")
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse client private key: %w", err)
+	}
+	key, ok := parsed.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("client private key is not an RSA key")
+	}
+	return key, nil
+}
+
 // FingerprintDER formats a SHA-256 fingerprint as AA:BB:CC...
 func FingerprintDER(der []byte) string {
 	sum := sha256.Sum256(der)
