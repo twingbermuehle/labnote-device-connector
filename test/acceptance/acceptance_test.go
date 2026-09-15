@@ -211,9 +211,7 @@ func TestOutageDeliversEverythingInOrder(t *testing.T) {
 		}
 	}
 
-	up := uploader.New(box, func() *labnote.Client {
-		return labnote.New(fake.server.URL, func() (string, error) { return "test-key", nil }, "test")
-	}, st, testLogger())
+	up := uploader.New(box, fake.newClient, st, testLogger())
 	go up.Run(ctx)
 
 	time.Sleep(8 * time.Second)
@@ -266,9 +264,7 @@ func TestSampleBarcodeBecomesSampleCode(t *testing.T) {
 
 	sup := device.New(ins, prof, pki, box, st, trust, testLogger())
 	go sup.Run(ctx)
-	up := uploader.New(box, func() *labnote.Client {
-		return labnote.New(fake.server.URL, func() (string, error) { return "test-key", nil }, "test")
-	}, st, testLogger())
+	up := uploader.New(box, fake.newClient, st, testLogger())
 	go up.Run(ctx)
 
 	waitFor(t, 2*time.Minute, func() bool {
