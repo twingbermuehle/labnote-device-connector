@@ -31,10 +31,24 @@ type Client struct {
 	version string
 }
 
+// Option customises the client. Production code passes none; the acceptance
+// tests use WithHTTPClient to trust their local test server's certificate.
+type Option func(*Client)
+
+// WithHTTPClient replaces the HTTP client. Intended for tests only — the
+// default client always verifies TLS.
+func WithHTTPClient(h *http.Client) Option {
+	return func(c *Client) {
+		if h != nil {
+			c.http = h
+		}
+	}
+}
+
 // New returns a client for baseURL. apiKey is a function so the key is read
 // from the keychain at call time and never held in a long-lived field.
-func New(baseURL string, apiKey func() (string, error), version string) *Client {
-	return &Client{
+func New(baseURL string, apiKey func() (string, error), version string, opts ...Option) *Client {
+	c := &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
 		version: version,
@@ -43,6 +57,10 @@ func New(baseURL string, apiKey func() (string, error), version string) *Client 
 			// Default transport: TLS verification on, no proxy of our own.
 		},
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // Error carries the HTTP status so callers can distinguish permanent
