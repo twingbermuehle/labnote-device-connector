@@ -1,0 +1,55 @@
+# Generic / base LADS profile.
+#
+# Targets the SPECTARIS LADS OPC UA reference implementation (the simulator
+# used by the acceptance tests) and any instrument that follows the companion
+# specification without vendor extensions.
+#
+# Paths are browse-name chains relative to the discovered result object.
+# The first readable, non-empty path wins.
+id: generic-lads
+description: Base LADS companion specification (SPECTARIS reference server)
+vendor: generic
+model: LADS reference
+device_type: analyzer
+
+finished_states:
+  - Completed
+  - Finished
+  - Stopped
+  - Aborted
+
+sample_code_paths:
+  - Properties/SampleId
+  - SampleInfo/SampleId
+  - SampleInfo/Barcode
+  - SampleId
+  - Samples/0/SampleId
+
+method_paths:
+  - Properties/ProgramTemplate/Name
+  - ProgramTemplate/Name
+  - Properties/MethodName
+  - MethodName
+
+operator_paths:
+  - Properties/User
+  - Properties/Operator
+  - User
+
+series_x_paths:
+  - Variables/SensorValueSet/TimeAxis
+  - Results/0/XAxis
+  - XAxis
+series_y_paths:
+  - Variables/SensorValueSet/SensorValue
+  - Results/0/YAxis
+  - YAxis
+
+scalar_paths:
+  - Properties/TotalArea
+  - Properties/PeakTable
+  - Variables/SensorValueSet/SensorValue
+  - Results/0/Value
+
+default_unit_x: s
+default_unit_y: ""
