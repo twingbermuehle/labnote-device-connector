@@ -8,11 +8,13 @@
 FROM node:20-bookworm
 
 ARG SIMULATOR_REPO=https://github.com/opcua-lads/workshop
-ARG SIMULATOR_REF=main
+# Pinned commit: the sample server publishes no release tags.
+ARG SIMULATOR_REF=e653dbc
 
-RUN git clone --depth 1 --branch "${SIMULATOR_REF}" "${SIMULATOR_REPO}" /app
+RUN git clone "${SIMULATOR_REPO}" /app && cd /app && git checkout "${SIMULATOR_REF}"
 WORKDIR /app
 RUN npm install
 
-EXPOSE 4840
+# The sample server hardcodes port 26543.
+EXPOSE 26543
 CMD ["npm", "start"]
