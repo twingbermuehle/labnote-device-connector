@@ -125,10 +125,22 @@ func (s *Supervisor) session(ctx context.Context) error {
 	s.log.Info("connected", "endpoint", s.ins.EndpointURL)
 
 	browser := lads.NewBrowser(client)
-	resultSets, err := browser.ResultSetNodes(ctx, s.ins.LADSNodeID)
+	deviceNode := s.ins.LADSNodeID
+	if deviceNode == "" {
+		// No device chosen during setup: use the single LADS device the server
+		// exposes, so a one-instrument server needs no node id at all.
+		devices, err := browser.Devices(ctx)
+		if err != nil {
+			return fmt.Errorf("discover LADS devices: %w", err)
+		}
+		deviceNode = devices[0].NodeID
+		s.log.Info("device auto-selected", "node_id", deviceNode, "name", devices[0].Name)
+	}
+	resultSets, err := browser.ResultSetNodes(ctx, deviceNode)
 	if err != nil {
 		return fmt.Errorf("browse LADS model: %w", err)
 	}
+
 
 	// Drain results that already finished while the connector was away.
 	for _, rs := range resultSets {
@@ -144,43 +156,42 @@ func (s *Supervisor) session(ctx context.Context) error {
 	}
 	defer func() { _ = sub.Cancel(context.WithoutCancel(ctx)) }()
 
-	handles := map[uint32]*ua.NodeID{}
+	// Watch every signal that can indicate a new or finished result: the
+	// ResultSet NodeVersion, plus each result's state or Stopped variable.
+	// Any notification triggers a rescan, which is cheap and order-safe.
 	var handle uint32
+	monitored := 0
 	for _, rs := range resultSets {
-		results, err := browser.Results(ctx, rs)
-		if err != nil {
-			continue
-		}
-		for _, res := range results {
-			stateNode, err := browser.StateVariable(ctx, res)
-			if err != nil {
+		for _, node := range browser.ChangeWatchNodes(ctx, rs) {
+			handle++
+			req := opcua.NewMonitoredItemCreateRequestWithDefaults(node, ua.AttributeIDValue, handle)
+			if _, err := sub.Monitor(ctx, ua.TimestampsToReturnSource, req); err != nil {
+				s.log.Warn("monitor node failed", "error", err)
 				continue
 			}
-			handle++
-			handles[handle] = res
-			req := opcua.NewMonitoredItemCreateRequestWithDefaults(stateNode, ua.AttributeIDValue, handle)
-			if _, err := sub.Monitor(ctx, ua.TimestampsToReturnSource, req); err != nil {
-				s.log.Warn("monitor result state failed", "error", err)
-			}
+			monitored++
 		}
-		// Watch the ResultSet itself so new results are picked up too.
-		handle++
-		handles[handle] = rs
-		req := opcua.NewMonitoredItemCreateRequestWithDefaults(rs, ua.AttributeIDValue, handle)
-		_, _ = sub.Monitor(ctx, ua.TimestampsToReturnSource, req)
 	}
-	if len(handles) == 0 {
-		return errors.New("no result state variables to subscribe to")
-	}
-	s.log.Info("subscribed", "monitored_items", len(handles))
+	s.log.Info("subscribed", "monitored_items", monitored)
 
 	keepAlive := time.NewTicker(30 * time.Second)
 	defer keepAlive.Stop()
+	// Safety net for servers that publish neither NodeVersion nor result state.
+	poll := time.NewTicker(5 * time.Second)
+	defer poll.Stop()
+
+	rescan := func() {
+		for _, rs := range resultSets {
+			s.scan(ctx, browser, rs)
+		}
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-poll.C:
+			rescan()
 		case <-keepAlive.C:
 			if _, err := client.Node(ua.NewNumericNodeID(0, 2258)).Value(ctx); err != nil {
 				return fmt.Errorf("keep-alive failed: %w", err)
@@ -192,50 +203,36 @@ func (s *Supervisor) session(ctx context.Context) error {
 			if n.Error != nil {
 				return fmt.Errorf("subscription error: %w", n.Error)
 			}
-			dcn, ok := n.Value.(*ua.DataChangeNotification)
-			if !ok {
+			if _, ok := n.Value.(*ua.DataChangeNotification); !ok {
 				continue
 			}
-			for _, item := range dcn.MonitoredItems {
-				node := handles[item.ClientHandle]
-				if node == nil {
-					continue
-				}
-				value := ""
-				if item.Value != nil {
-					value = lads.VariantToString(item.Value.Value)
-				}
-				if mapping.IsFinished(value, s.profile) {
-					s.forward(ctx, browser, node)
-					continue
-				}
-				// Unknown notification: rescan the whole set, cheap and safe.
-				s.scan(ctx, browser, node)
-			}
+			rescan()
 		}
 	}
 }
 
-// scan walks a ResultSet and forwards every finished result.
+// scan walks a ResultSet and forwards every finished result. A result counts as
+// finished when its state variable says so, or - for servers without a result
+// state machine - when it carries a Stopped timestamp.
 func (s *Supervisor) scan(ctx context.Context, b *lads.Browser, resultSet *ua.NodeID) {
 	results, err := b.Results(ctx, resultSet)
 	if err != nil {
 		return
 	}
 	for _, res := range results {
-		stateNode, err := b.StateVariable(ctx, res)
-		if err != nil {
+		if stateNode, err := b.StateVariable(ctx, res); err == nil {
+			dv, err := b.SourceTimestamp(ctx, stateNode)
+			if err == nil && dv != nil && mapping.IsFinished(lads.VariantToString(dv.Value), s.profile) {
+				s.forward(ctx, b, res)
+			}
 			continue
 		}
-		dv, err := b.SourceTimestamp(ctx, stateNode)
-		if err != nil || dv == nil {
-			continue
-		}
-		if mapping.IsFinished(lads.VariantToString(dv.Value), s.profile) {
+		if _, ok := b.StoppedTime(ctx, res); ok {
 			s.forward(ctx, b, res)
 		}
 	}
 }
+
 
 func (s *Supervisor) forward(ctx context.Context, b *lads.Browser, resultNode *ua.NodeID) {
 	rec, err := mapping.Build(ctx, b, s.ins, s.profile, resultNode)

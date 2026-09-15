@@ -31,9 +31,20 @@ type Profile struct {
 	MethodPaths     []string `yaml:"method_paths"`
 	OperatorPaths   []string `yaml:"operator_paths"`
 
+	// LADS also carries run context as KeyValuePair arrays. These say where
+	// those arrays live and which keys to read from them.
+	PropertyPaths  []string `yaml:"property_paths"`
+	SampleCodeKeys []string `yaml:"sample_code_keys"`
+	MethodKeys     []string `yaml:"method_keys"`
+	OperatorKeys   []string `yaml:"operator_keys"`
+
+
 	// Where the measurement series lives.
 	SeriesXPaths []string `yaml:"series_x_paths"`
 	SeriesYPaths []string `yaml:"series_y_paths"`
+
+	// Containers searched for a numeric array when no series path matches.
+	SeriesContainerPaths []string `yaml:"series_container_paths"`
 
 	// Node browse names copied verbatim into summary.
 	ScalarPaths []string `yaml:"scalar_paths"`
@@ -92,6 +103,21 @@ func (s *Set) add(filename string, raw []byte) error {
 	}
 	if p.ID == "" {
 		p.ID = strings.TrimSuffix(filename, ".yaml")
+	}
+	if len(p.SeriesContainerPaths) == 0 {
+		p.SeriesContainerPaths = []string{"VariableSet", "Variables", "Results"}
+	}
+	if len(p.PropertyPaths) == 0 {
+		p.PropertyPaths = []string{"Properties", "Samples"}
+	}
+	if len(p.SampleCodeKeys) == 0 {
+		p.SampleCodeKeys = []string{"SampleId", "SampleID", "SampleCode", "Barcode", "SampleBarcode"}
+	}
+	if len(p.MethodKeys) == 0 {
+		p.MethodKeys = []string{"Method", "MethodName", "ProgramTemplateId", "Assay"}
+	}
+	if len(p.OperatorKeys) == 0 {
+		p.OperatorKeys = []string{"Operator", "User", "UserId"}
 	}
 	if len(p.FinishedStates) == 0 {
 		p.FinishedStates = []string{"Completed", "Finished", "Stopped", "Aborted"}

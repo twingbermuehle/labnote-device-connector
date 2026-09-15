@@ -1,0 +1,44 @@
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/gopcua/opcua"
+	"github.com/gopcua/opcua/id"
+	"github.com/gopcua/opcua/ua"
+)
+
+func dump(ctx context.Context, n *opcua.Node, depth int, max int) {
+	if depth > max {
+		return
+	}
+	kids, err := n.Children(ctx, id.HierarchicalReferences, ua.NodeClassObject|ua.NodeClassVariable)
+	if err != nil {
+		fmt.Printf("%*serr: %v\n", depth*2, "", err)
+		return
+	}
+	for _, k := range kids {
+		bn, err := k.BrowseName(ctx)
+		name := "?"
+		if err == nil {
+			name = fmt.Sprintf("%d:%s", bn.NamespaceIndex, bn.Name)
+		}
+		fmt.Printf("%*s%s  [%s]\n", depth*2, "", name, k.ID.String())
+		dump(ctx, k, depth+1, max)
+	}
+}
+
+func main() {
+	ctx := context.Background()
+	c, err := opcua.NewClient("opc.tcp://127.0.0.1:26543")
+	if err != nil {
+		panic(err)
+	}
+	if err := c.Connect(ctx); err != nil {
+		panic(err)
+	}
+	defer c.Close(ctx)
+	objects := c.Node(ua.NewNumericNodeID(0, id.ObjectsFolder))
+	dump(ctx, objects, 0, 2)
+}
