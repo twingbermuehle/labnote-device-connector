@@ -167,12 +167,7 @@ func TestFinishedResultUploadsExactlyOnce(t *testing.T) {
 	sup := device.New(ins, prof, pki, box, st, trust, testLogger())
 	go sup.Run(ctx)
 
-	client := labnote.New(fake.server.URL, func() (string, error) { return "test-key", nil }, "test")
-	_ = client // the uploader builds its own request per row
-	up := uploader.New(box, func() *labnote.Client {
-		c := labnote.New(fake.server.URL, func() (string, error) { return "test-key", nil }, "test")
-		return c
-	}, st, testLogger())
+	up := uploader.New(box, fake.newClient, st, testLogger())
 	go up.Run(ctx)
 
 	waitFor(t, 2*time.Minute, func() bool { return len(fake.results()) >= 1 })
