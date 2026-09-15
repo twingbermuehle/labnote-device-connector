@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -177,11 +178,14 @@ func TestFinishedResultUploadsExactlyOnce(t *testing.T) {
 	go up.Run(ctx)
 
 	// The operator starts a run; the instrument then produces the result.
-	startRun(t, ctx, "BC-ONCE-1")
+	// The barcode is unique per test run so a simulator that already holds
+	// older results cannot be mistaken for a duplicate.
+	barcode := fmt.Sprintf("BC-ONCE-%d", time.Now().UnixNano())
+	startRun(t, ctx, barcode)
 
 	waitFor(t, 2*time.Minute, func() bool {
 		for _, r := range fake.results() {
-			if r.SampleCode == "BC-ONCE-1" {
+			if r.SampleCode == barcode {
 				return true
 			}
 		}
@@ -193,7 +197,7 @@ func TestFinishedResultUploadsExactlyOnce(t *testing.T) {
 	var rec model.Result
 	seen := 0
 	for _, r := range fake.results() {
-		if r.SampleCode == "BC-ONCE-1" {
+		if r.SampleCode == barcode {
 			seen++
 			rec = r
 		}
@@ -291,11 +295,12 @@ func TestSampleBarcodeBecomesSampleCode(t *testing.T) {
 	up := uploader.New(box, fake.newClient, st, testLogger())
 	go up.Run(ctx)
 
-	startRun(t, ctx, "BC-SAMPLE-42")
+	barcode := fmt.Sprintf("BC-SAMPLE-%d", time.Now().UnixNano())
+	startRun(t, ctx, barcode)
 
 	waitFor(t, 2*time.Minute, func() bool {
 		for _, r := range fake.results() {
-			if r.SampleCode == "BC-SAMPLE-42" {
+			if r.SampleCode == barcode {
 				return true
 			}
 			if r.SampleCode != "" {
