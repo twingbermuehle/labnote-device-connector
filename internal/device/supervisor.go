@@ -294,11 +294,16 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 	s.st.SetPendingTrust(s.ins, fingerprint, false)
 	_ = s.pki.SaveServerCert(s.ins.ExternalDeviceID, ep.ServerCertificate)
 
+	clientDER, err := s.pki.ClientCertDER()
+	if err != nil {
+		return nil, fmt.Errorf("read client certificate: %w", err)
+	}
+
 	client, err := opcua.NewClient(ep.EndpointURL,
 		opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeCertificate),
 		opcua.CertificateFile(s.pki.CertPath()),
 		opcua.PrivateKeyFile(s.pki.KeyPath()),
-		opcua.AuthCertificateFile(s.pki.CertPath()),
+		opcua.AuthCertificate(clientDER),
 		opcua.AutoReconnect(false), // the Run loop owns reconnection
 		opcua.RequestTimeout(20*time.Second),
 	)

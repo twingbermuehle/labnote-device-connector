@@ -104,6 +104,20 @@ func (s *Store) Fingerprint() (string, error) {
 	return FingerprintDER(block.Bytes), nil
 }
 
+// ClientCertDER returns the raw DER bytes of the client certificate, as needed
+// for OPC UA certificate-based user authentication.
+func (s *Store) ClientCertDER() ([]byte, error) {
+	raw, err := os.ReadFile(s.certPath)
+	if err != nil {
+		return nil, err
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		return nil, errors.New("client certificate is not valid PEM")
+	}
+	return block.Bytes, nil
+}
+
 // FingerprintDER formats a SHA-256 fingerprint as AA:BB:CC...
 func FingerprintDER(der []byte) string {
 	sum := sha256.Sum256(der)
