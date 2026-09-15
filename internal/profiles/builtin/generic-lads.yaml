@@ -41,6 +41,7 @@ series_x_paths:
   - Results/0/XAxis
   - XAxis
 series_y_paths:
+  - VariableSet/Luminescence
   - Variables/SensorValueSet/SensorValue
   - Results/0/YAxis
   - YAxis

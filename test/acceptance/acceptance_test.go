@@ -12,6 +12,7 @@ package acceptance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,7 +21,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gopcua/opcua"
+	"github.com/gopcua/opcua/id"
+	"github.com/gopcua/opcua/ua"
+
 	"github.com/labnote/labnote-device-connector/internal/certs"
+	"github.com/labnote/labnote-device-connector/internal/lads"
 	"github.com/labnote/labnote-device-connector/internal/device"
 	"github.com/labnote/labnote-device-connector/internal/labnote"
 	"github.com/labnote/labnote-device-connector/internal/model"
@@ -170,13 +176,31 @@ func TestFinishedResultUploadsExactlyOnce(t *testing.T) {
 	up := uploader.New(box, fake.newClient, st, testLogger())
 	go up.Run(ctx)
 
-	waitFor(t, 2*time.Minute, func() bool { return len(fake.results()) >= 1 })
+	// The operator starts a run; the instrument then produces the result.
+	startRun(t, ctx, "BC-ONCE-1")
 
-	got := fake.results()
-	if len(got) != 1 {
-		t.Fatalf("want exactly 1 ingest record, got %d", len(got))
+	waitFor(t, 2*time.Minute, func() bool {
+		for _, r := range fake.results() {
+			if r.SampleCode == "BC-ONCE-1" {
+				return true
+			}
+		}
+		return false
+	})
+
+	// Give any duplicate a chance to arrive before asserting exactly-once.
+	time.Sleep(15 * time.Second)
+	var rec model.Result
+	seen := 0
+	for _, r := range fake.results() {
+		if r.SampleCode == "BC-ONCE-1" {
+			seen++
+			rec = r
+		}
 	}
-	rec := got[0]
+	if seen != 1 {
+		t.Fatalf("want exactly 1 ingest record for the run, got %d", seen)
+	}
 	if rec.ExternalDeviceID != ins.ExternalDeviceID {
 		t.Fatalf("wrong device id: %s", rec.ExternalDeviceID)
 	}
@@ -267,8 +291,13 @@ func TestSampleBarcodeBecomesSampleCode(t *testing.T) {
 	up := uploader.New(box, fake.newClient, st, testLogger())
 	go up.Run(ctx)
 
+	startRun(t, ctx, "BC-SAMPLE-42")
+
 	waitFor(t, 2*time.Minute, func() bool {
 		for _, r := range fake.results() {
+			if r.SampleCode == "BC-SAMPLE-42" {
+				return true
+			}
 			if r.SampleCode != "" {
 				return true
 			}
@@ -276,6 +305,99 @@ func TestSampleBarcodeBecomesSampleCode(t *testing.T) {
 		return false
 	})
 }
+
+// startRun acts as the lab operator: it calls the LADS StartProgram method on
+// the simulator so the instrument produces a real result carrying the given
+// sample barcode. The connector itself never calls methods.
+func startRun(t *testing.T, ctx context.Context, barcode string) {
+	t.Helper()
+	c, err := opcua.NewClient(endpoint())
+	if err != nil {
+		t.Fatalf("simulator client: %v", err)
+	}
+	if err := c.Connect(ctx); err != nil {
+		t.Fatalf("connect simulator: %v", err)
+	}
+	defer func() { _ = c.Close(context.WithoutCancel(ctx)) }()
+
+	b := lads.NewBrowser(c)
+	devs, err := b.Devices(ctx)
+	if err != nil || len(devs) == 0 {
+		t.Fatalf("discover devices: %v", err)
+	}
+	nid, err := ua.ParseNodeID(devs[0].NodeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, start, err := findStartProgram(ctx, c, nid)
+	if err != nil {
+		t.Fatalf("find StartProgram: %v", err)
+	}
+	props := []*ua.ExtensionObject{{
+		EncodingMask: ua.ExtensionObjectBinary,
+		TypeID:       &ua.ExpandedNodeID{NodeID: ua.NewNumericNodeID(0, id.KeyValuePair_Encoding_DefaultBinary)},
+		Value: &ua.KeyValuePair{
+			Key:   &ua.QualifiedName{Name: "SampleId"},
+			Value: ua.MustVariant(barcode),
+		},
+	}}
+	res, err := c.Call(ctx, &ua.CallMethodRequest{
+		ObjectID: state,
+		MethodID: start,
+		InputArguments: []*ua.Variant{
+			ua.MustVariant("MycoAlert Assay"),
+			ua.MustVariant(props),
+			ua.MustVariant("job-1"),
+			ua.MustVariant("task-1"),
+			ua.MustVariant([]*ua.ExtensionObject{}),
+		},
+	})
+	if err != nil {
+		t.Fatalf("StartProgram: %v", err)
+	}
+	if res.StatusCode != ua.StatusOK {
+		t.Fatalf("StartProgram returned %v", res.StatusCode)
+	}
+}
+
+func findStartProgram(ctx context.Context, c *opcua.Client, device *ua.NodeID) (*ua.NodeID, *ua.NodeID, error) {
+	fus, err := c.Node(device).Children(ctx, id.HierarchicalReferences, ua.NodeClassObject)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, set := range fus {
+		if n, _ := set.BrowseName(ctx); n == nil || n.Name != "FunctionalUnitSet" {
+			continue
+		}
+		units, err := set.Children(ctx, id.HierarchicalReferences, ua.NodeClassObject)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, u := range units {
+			states, err := u.Children(ctx, id.HierarchicalReferences, ua.NodeClassObject)
+			if err != nil {
+				continue
+			}
+			for _, st := range states {
+				if n, _ := st.BrowseName(ctx); n == nil || n.Name != "FunctionalUnitState" {
+					continue
+				}
+				methods, err := st.Children(ctx, id.HierarchicalReferences, ua.NodeClassMethod)
+				if err != nil {
+					continue
+				}
+				for _, m := range methods {
+					if n, _ := m.BrowseName(ctx); n != nil && n.Name == "StartProgram" {
+						return st.ID, m.ID, nil
+					}
+				}
+			}
+		}
+	}
+	return nil, nil, errorNoStart
+}
+
+var errorNoStart = errors.New("simulator exposes no StartProgram method")
 
 func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 	t.Helper()

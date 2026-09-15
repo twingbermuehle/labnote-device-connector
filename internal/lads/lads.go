@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/id"
@@ -68,29 +69,44 @@ func (b *Browser) Devices(ctx context.Context) ([]Device, error) {
 		if err != nil {
 			continue
 		}
+
+		// DeviceSet also holds non-device folders such as DeviceFeatures.
+		// A LADS device always carries a FunctionalUnitSet, so use that as
+		// the discriminator instead of trusting every child.
+		fus, err := b.childByName(ctx, child, BrowseFunctionalUnitSet)
+		if err != nil {
+			continue
+		}
+
 		d := Device{NodeID: child.ID.String(), Name: name.Name}
 		d.Manufacturer, _ = b.readStringChild(ctx, child, "Manufacturer")
 		d.Model, _ = b.readStringChild(ctx, child, "Model")
 		d.SerialNumber, _ = b.readStringChild(ctx, child, "SerialNumber")
 
-		if fus, err := b.childByName(ctx, child, BrowseFunctionalUnitSet); err == nil {
-			units, _ := fus.Children(ctx, id.HierarchicalReferences, ua.NodeClassObject)
-			for _, u := range units {
-				if n, err := u.BrowseName(ctx); err == nil {
-					d.FunctionalUnits = append(d.FunctionalUnits, n.Name)
-				}
-				if rs, err := b.childByName(ctx, u, BrowseResultSet); err == nil {
-					d.ResultSets = append(d.ResultSets, rs.ID.String())
-				}
+		units, _ := fus.Children(ctx, id.HierarchicalReferences, ua.NodeClassObject)
+		seenUnit := map[string]bool{}
+		for _, u := range units {
+			// Servers may expose the same unit through several references.
+			if seenUnit[u.ID.String()] {
+				continue
 			}
+			seenUnit[u.ID.String()] = true
+			if n, err := u.BrowseName(ctx); err == nil {
+				d.FunctionalUnits = append(d.FunctionalUnits, n.Name)
+			}
+			for _, rs := range b.resultSetsBelowUnit(ctx, u) {
+				d.ResultSets = append(d.ResultSets, rs.String())
+			}
+
 		}
 		out = append(out, d)
 	}
 	if len(out) == 0 {
-		return nil, errors.New("DeviceSet contains no devices")
+		return nil, errors.New("DeviceSet contains no LADS devices")
 	}
 	return out, nil
 }
+
 
 // ResultSetNodes returns every ResultSet node below the given device node, so
 // the supervisor can subscribe to their result state variables.
@@ -102,6 +118,15 @@ func (b *Browser) ResultSetNodes(ctx context.Context, deviceNodeID string) ([]*u
 	device := b.c.Node(nid)
 
 	var out []*ua.NodeID
+	seen := map[string]bool{}
+	add := func(n *ua.NodeID) {
+		if n == nil || seen[n.String()] {
+			return
+		}
+		seen[n.String()] = true
+		out = append(out, n)
+	}
+
 	fus, err := b.childByName(ctx, device, BrowseFunctionalUnitSet)
 	if err != nil {
 		return nil, err
@@ -111,17 +136,8 @@ func (b *Browser) ResultSetNodes(ctx context.Context, deviceNodeID string) ([]*u
 		return nil, err
 	}
 	for _, u := range units {
-		if rs, err := b.childByName(ctx, u, BrowseResultSet); err == nil {
-			out = append(out, rs.ID)
-		}
-		// Some servers hang the ResultSet off the individual functions.
-		if fs, err := b.childByName(ctx, u, BrowseFunctionSet); err == nil {
-			fns, _ := fs.Children(ctx, id.HierarchicalReferences, ua.NodeClassObject)
-			for _, fn := range fns {
-				if rs, err := b.childByName(ctx, fn, BrowseResultSet); err == nil {
-					out = append(out, rs.ID)
-				}
-			}
+		for _, rs := range b.resultSetsBelowUnit(ctx, u) {
+			add(rs)
 		}
 	}
 	if len(out) == 0 {
@@ -129,6 +145,161 @@ func (b *Browser) ResultSetNodes(ctx context.Context, deviceNodeID string) ([]*u
 	}
 	return out, nil
 }
+
+// resultSetsBelowUnit collects the ResultSet nodes of one functional unit.
+// The companion specification places the ResultSet under the unit's
+// ProgramManager; some servers put it directly on the unit or on individual
+// functions, so all three layouts are accepted.
+func (b *Browser) resultSetsBelowUnit(ctx context.Context, unit *opcua.Node) []*ua.NodeID {
+	var out []*ua.NodeID
+	seen := map[string]bool{}
+	add := func(n *ua.NodeID) {
+		if n == nil || seen[n.String()] {
+			return
+		}
+		seen[n.String()] = true
+		out = append(out, n)
+	}
+
+	if pm, err := b.childByName(ctx, unit, BrowseProgramManager); err == nil {
+		if rs, err := b.childByName(ctx, pm, BrowseResultSet); err == nil {
+			add(rs.ID)
+		}
+	}
+	if rs, err := b.childByName(ctx, unit, BrowseResultSet); err == nil {
+		add(rs.ID)
+	}
+	if fs, err := b.childByName(ctx, unit, BrowseFunctionSet); err == nil {
+		fns, _ := fs.Children(ctx, id.HierarchicalReferences, ua.NodeClassObject)
+		for _, fn := range fns {
+			if rs, err := b.childByName(ctx, fn, BrowseResultSet); err == nil {
+				add(rs.ID)
+			}
+		}
+	}
+	return out
+}
+
+// StoppedTime returns the result's Stopped timestamp. LADS results carry
+// Started/Stopped properties; a non-zero Stopped means the run has finished,
+// which is the only completion signal some servers expose (the companion
+// specification makes the result state machine optional).
+func (b *Browser) StoppedTime(ctx context.Context, result *ua.NodeID) (time.Time, bool) {
+	for _, p := range []string{"Stopped", "Properties/Stopped", "EndTime"} {
+		v, err := b.ReadPath(ctx, result, p)
+		if err != nil || v == nil {
+			continue
+		}
+		if ts, ok := v.Value().(time.Time); ok && !ts.IsZero() && ts.Year() > 1601 {
+			return ts.UTC(), true
+		}
+	}
+	return time.Time{}, false
+}
+
+// ChangeWatchNodes returns the variables worth subscribing to for a ResultSet:
+// its NodeVersion (bumped whenever a result is added) and the Stopped/state
+// variable of every result already present.
+func (b *Browser) ChangeWatchNodes(ctx context.Context, resultSet *ua.NodeID) []*ua.NodeID {
+	var out []*ua.NodeID
+	if n, err := b.resolvePath(ctx, b.c.Node(resultSet), "NodeVersion"); err == nil {
+		out = append(out, n.ID)
+	}
+	results, err := b.Results(ctx, resultSet)
+	if err != nil {
+		return out
+	}
+	for _, res := range results {
+		if n, err := b.StateVariable(ctx, res); err == nil {
+			out = append(out, n)
+			continue
+		}
+		if n, err := b.resolvePath(ctx, b.c.Node(res), "Stopped"); err == nil {
+			out = append(out, n.ID)
+		}
+	}
+	return out
+}
+
+// FirstNumericArrayBelow searches the children of the given container paths for
+// the first variable holding a numeric array, so results whose variable names
+// are vendor specific still produce a series.
+func (b *Browser) FirstNumericArrayBelow(ctx context.Context, base *ua.NodeID, containers []string) ([]float64, string, bool) {
+	for _, c := range containers {
+		node, err := b.resolvePath(ctx, b.c.Node(base), c)
+		if err != nil {
+			continue
+		}
+		kids, err := node.Children(ctx, id.HierarchicalReferences, ua.NodeClassVariable)
+		if err != nil {
+			continue
+		}
+		for _, k := range kids {
+			name, err := k.BrowseName(ctx)
+			if err != nil || name.Name == "NodeVersion" {
+				continue
+			}
+			v, err := k.Value(ctx)
+			if err != nil || v == nil {
+				continue
+			}
+			nums, ok := VariantToFloats(v)
+			if !ok || len(nums) < 2 {
+				continue
+			}
+			unit, _ := b.ReadEngineeringUnit(ctx, base, c+"/"+name.Name)
+			return nums, unit, true
+		}
+	}
+	return nil, "", false
+}
+
+// ReadPropertyKey reads a KeyValuePair array (LADS Properties) and returns the
+// value of the first matching key.
+func (b *Browser) ReadPropertyKey(ctx context.Context, base *ua.NodeID, paths, keys []string) string {
+	for _, p := range paths {
+		v, err := b.ReadPath(ctx, base, p)
+		if err != nil || v == nil {
+			continue
+		}
+		for _, kv := range keyValues(v) {
+			for _, want := range keys {
+				if kv.Key != nil && strings.EqualFold(kv.Key.Name, want) {
+					if s := VariantToString(kv.Value); s != "" {
+						return s
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func keyValues(v *ua.Variant) []*ua.KeyValuePair {
+	var out []*ua.KeyValuePair
+	switch val := v.Value().(type) {
+	case []*ua.KeyValuePair:
+		out = val
+	case *ua.KeyValuePair:
+		out = []*ua.KeyValuePair{val}
+	case []*ua.ExtensionObject:
+		for _, eo := range val {
+			if eo == nil {
+				continue
+			}
+			if kv, ok := eo.Value.(*ua.KeyValuePair); ok {
+				out = append(out, kv)
+			}
+		}
+	case *ua.ExtensionObject:
+		if kv, ok := val.Value.(*ua.KeyValuePair); ok {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+
 
 // Results lists the result objects currently held in a ResultSet.
 func (b *Browser) Results(ctx context.Context, resultSet *ua.NodeID) ([]*ua.NodeID, error) {

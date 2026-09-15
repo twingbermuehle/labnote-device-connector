@@ -26,7 +26,9 @@ func Build(
 	resultNode *ua.NodeID,
 ) (model.Result, error) {
 	measuredAt := time.Now().UTC()
-	if dv, err := b.SourceTimestamp(ctx, resultNode); err == nil && dv != nil && !dv.SourceTimestamp.IsZero() {
+	if ts, ok := b.StoppedTime(ctx, resultNode); ok {
+		measuredAt = ts
+	} else if dv, err := b.SourceTimestamp(ctx, resultNode); err == nil && dv != nil && !dv.SourceTimestamp.IsZero() {
 		measuredAt = dv.SourceTimestamp.UTC()
 	} else if ts := readTimestamp(ctx, b, resultNode); !ts.IsZero() {
 		measuredAt = ts
@@ -36,14 +38,17 @@ func Build(
 		ExternalDeviceID: ins.ExternalDeviceID,
 		ExternalResultID: fmt.Sprintf("%s@%s", resultNode.String(), measuredAt.Format(time.RFC3339Nano)),
 		MeasuredAt:       measuredAt,
-		Method:           b.ReadStringPath(ctx, resultNode, prof.MethodPaths),
-		SampleCode:       b.ReadStringPath(ctx, resultNode, prof.SampleCodePaths),
-		Operator:         b.ReadStringPath(ctx, resultNode, prof.OperatorPaths),
+		Method:           firstNonEmpty(b.ReadStringPath(ctx, resultNode, prof.MethodPaths), b.ReadPropertyKey(ctx, resultNode, prof.PropertyPaths, prof.MethodKeys)),
+		SampleCode:       firstNonEmpty(b.ReadStringPath(ctx, resultNode, prof.SampleCodePaths), b.ReadPropertyKey(ctx, resultNode, prof.PropertyPaths, prof.SampleCodeKeys)),
+		Operator:         firstNonEmpty(b.ReadStringPath(ctx, resultNode, prof.OperatorPaths), b.ReadPropertyKey(ctx, resultNode, prof.PropertyPaths, prof.OperatorKeys)),
 		Summary:          map[string]any{},
 		LADS:             map[string]any{},
 	}
 
 	ys, unitY, okY := b.ReadFloatsPath(ctx, resultNode, prof.SeriesYPaths)
+	if !okY {
+		ys, unitY, okY = b.FirstNumericArrayBelow(ctx, resultNode, prof.SeriesContainerPaths)
+	}
 	if okY {
 		xs, unitX, okX := b.ReadFloatsPath(ctx, resultNode, prof.SeriesXPaths)
 		r.Points = zip(xs, ys, okX)
