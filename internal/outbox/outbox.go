@@ -28,11 +28,13 @@ type Outbox struct {
 
 // Row is one queued result.
 type Row struct {
-	ID         int64
-	Result     model.Result
-	Attempts   int
-	CreatedAt  time.Time
-	LastError  string
+	ID        int64
+	Result    model.Result
+	Attempts  int
+	CreatedAt time.Time
+	LastError string
+	// DueAt is the earliest time this row may be retried.
+	DueAt time.Time
 }
 
 const schema = `
