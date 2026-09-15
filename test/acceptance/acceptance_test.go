@@ -87,6 +87,17 @@ func (f *fakeLabNote) setOffline(v bool) {
 	f.mu.Unlock()
 }
 
+// newClient returns an ingest client that trusts this test server's
+// self-signed certificate. Production clients always verify TLS normally.
+func (f *fakeLabNote) newClient() *labnote.Client {
+	return labnote.New(
+		f.server.URL,
+		func() (string, error) { return "test-key", nil },
+		"test",
+		labnote.WithHTTPClient(f.server.Client()),
+	)
+}
+
 func (f *fakeLabNote) results() []model.Result {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -156,12 +167,7 @@ func TestFinishedResultUploadsExactlyOnce(t *testing.T) {
 	sup := device.New(ins, prof, pki, box, st, trust, testLogger())
 	go sup.Run(ctx)
 
-	client := labnote.New(fake.server.URL, func() (string, error) { return "test-key", nil }, "test")
-	_ = client // the uploader builds its own request per row
-	up := uploader.New(box, func() *labnote.Client {
-		c := labnote.New(fake.server.URL, func() (string, error) { return "test-key", nil }, "test")
-		return c
-	}, st, testLogger())
+	up := uploader.New(box, fake.newClient, st, testLogger())
 	go up.Run(ctx)
 
 	waitFor(t, 2*time.Minute, func() bool { return len(fake.results()) >= 1 })
@@ -205,9 +211,7 @@ func TestOutageDeliversEverythingInOrder(t *testing.T) {
 		}
 	}
 
-	up := uploader.New(box, func() *labnote.Client {
-		return labnote.New(fake.server.URL, func() (string, error) { return "test-key", nil }, "test")
-	}, st, testLogger())
+	up := uploader.New(box, fake.newClient, st, testLogger())
 	go up.Run(ctx)
 
 	time.Sleep(8 * time.Second)
@@ -260,9 +264,7 @@ func TestSampleBarcodeBecomesSampleCode(t *testing.T) {
 
 	sup := device.New(ins, prof, pki, box, st, trust, testLogger())
 	go sup.Run(ctx)
-	up := uploader.New(box, func() *labnote.Client {
-		return labnote.New(fake.server.URL, func() (string, error) { return "test-key", nil }, "test")
-	}, st, testLogger())
+	up := uploader.New(box, fake.newClient, st, testLogger())
 	go up.Run(ctx)
 
 	waitFor(t, 2*time.Minute, func() bool {

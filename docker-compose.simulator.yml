@@ -14,18 +14,12 @@ services:
       context: .
       dockerfile: deploy/simulator/Dockerfile
     container_name: lads-simulator
+    # The sample server binds 26543 internally (hardcoded); we publish it on
+    # the conventional OPC UA port so tests can use opc.tcp://127.0.0.1:4840.
     ports:
-      - "4840:4840"
-    environment:
-      LADS_SECURITY_POLICIES: Basic256Sha256
-      LADS_SECURITY_MODES: SignAndEncrypt
-      LADS_ALLOW_ANONYMOUS: "false"
-      LADS_AUTO_ACCEPT_CLIENT_CERTS: "true" # test convenience only
-      LADS_SIMULATION: "true"
-      LADS_SIMULATION_INTERVAL_SECONDS: "20"
-      LADS_SIMULATION_SAMPLE_ID: SAMPLE-0001
+      - "4840:26543"
     volumes:
-      - lads-pki:/app/pki
+      - lads-pki:/root/.config/node-opcua-default-nodejs
 
   # Optional: the connector itself, pointed at the simulator.
   connector:
