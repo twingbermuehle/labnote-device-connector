@@ -1,0 +1,36 @@
+[Unit]
+Description=LabNote Device Connector
+Documentation=https://labnote-light.com/connector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/labnote-connector
+Restart=always
+RestartSec=10
+User=labnote-connector
+Group=labnote-connector
+StateDirectory=labnote-connector
+Environment=LABNOTE_CONNECTOR_DATA_DIR=/var/lib/labnote-connector
+
+# The ingest API key lives in the Secret Service keyring of this user, not in
+# this unit file. Never add it here.
+
+# Hardening: outbound HTTPS and the loopback setup interface are all it needs.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

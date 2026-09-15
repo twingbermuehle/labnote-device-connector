@@ -1,0 +1,48 @@
+# LADS OPC UA reference/simulator server for testing without hardware.
+#
+#   docker compose -f docker-compose.simulator.yml up -d
+#   go test -tags acceptance ./test/acceptance/... -v
+#
+# The simulator implements the SPECTARIS LADS companion specification. It must
+# be configured for Basic256Sha256 / SignAndEncrypt — the connector refuses
+# None and anonymous endpoints, which is exactly what acceptance test 3 checks.
+services:
+  lads-simulator:
+    image: ghcr.io/spectaris/lads-reference-server:latest
+    container_name: lads-simulator
+    ports:
+      - "4840:4840"
+    environment:
+      LADS_SECURITY_POLICIES: Basic256Sha256
+      LADS_SECURITY_MODES: SignAndEncrypt
+      LADS_ALLOW_ANONYMOUS: "false"
+      LADS_AUTO_ACCEPT_CLIENT_CERTS: "true" # test convenience only
+      LADS_SIMULATION: "true"
+      LADS_SIMULATION_INTERVAL_SECONDS: "20"
+      LADS_SIMULATION_SAMPLE_ID: SAMPLE-0001
+    volumes:
+      - lads-pki:/app/pki
+
+  # Optional: the connector itself, pointed at the simulator.
+  connector:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile
+    depends_on:
+      - lads-simulator
+    environment:
+      # In a container there is no OS credential store, so the key comes from
+      # the environment instead. On Windows and Linux desktops the connector
+      # uses the credential store and this variable is not set.
+      LABNOTE_INGEST_API_KEY: ${LABNOTE_INGEST_API_KEY:-}
+      LABNOTE_CONNECTOR_DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8420:8420"
+    volumes:
+      - connector-data:/data
+    profiles:
+      - with-connector
+
+volumes:
+  lads-pki:
+  connector-data:

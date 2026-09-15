@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LabNote Device Connector — local setup</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="dot" id="statusDot"></span>
+        <div>
+          <h1>LabNote Device Connector</h1>
+          <p id="subtitle">Local setup — this page is only reachable from this computer.</p>
+        </div>
+      </div>
+      <div class="meta">
+        <span id="version"></span>
+        <a href="/api/logs.zip">Export logs</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="card" id="setupCard">
+        <h2>1. Connection to LabNote</h2>
+        <label>LabNote address<input id="labnoteUrl" placeholder="https://your-instance.example.com" /></label>
+        <label>Ingest API key<input id="apiKey" type="password" placeholder="stored in the operating system credential store" autocomplete="off" /></label>
+        <div class="row">
+          <label>Connector name<input id="name" placeholder="lab-connector-01" /></label>
+          <label>Location<input id="location" placeholder="Building C, Lab 2.14" /></label>
+        </div>
+        <button id="saveSetup">Save and test</button>
+        <p class="hint" id="setupHint"></p>
+      </section>
+
+      <section class="card">
+        <h2>2. Client certificate</h2>
+        <p>Trust this fingerprint on every instrument so it accepts the connector:</p>
+        <code id="fingerprint">—</code>
+      </section>
+
+      <section class="card">
+        <h2>3. Instruments</h2>
+        <table id="instrumentTable">
+          <thead>
+            <tr><th>Name</th><th>Device ID</th><th>Endpoint</th><th>Status</th><th>Last result</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <h3>Add or edit an instrument</h3>
+        <div class="grid">
+          <label>Friendly name<input id="insName" placeholder="HPLC 07" /></label>
+          <label>Device ID<input id="insExternal" placeholder="HPLC-07" /></label>
+          <label>OPC UA endpoint<input id="insEndpoint" placeholder="opc.tcp://192.168.1.50:4840" /></label>
+          <label>Vendor<input id="insVendor" placeholder="agilent" /></label>
+          <label>Model<input id="insModel" placeholder="1260 Infinity II" /></label>
+          <label>Device type<input id="insType" placeholder="hplc" /></label>
+          <label>LADS device node<input id="insNode" placeholder="ns=2;i=5001" /></label>
+          <label>Mapping profile<select id="insProfile"></select></label>
+          <label>Default unit X<input id="insUnitX" placeholder="min" /></label>
+          <label>Default unit Y<input id="insUnitY" placeholder="mAU" /></label>
+        </div>
+        <p class="hint">Security is fixed to Basic256Sha256 / SignAndEncrypt with mutual certificates. Unencrypted and anonymous connections are refused.</p>
+        <div class="actions">
+          <button id="testInstrument" class="secondary">Test connection</button>
+          <button id="saveInstrument">Save instrument</button>
+          <input type="hidden" id="insId" />
+        </div>
+        <p class="hint" id="instrumentHint"></p>
+      </section>
+
+      <section class="card">
+        <h2>4. Status</h2>
+        <dl>
+          <dt>Connector</dt><dd id="connectorStatus">—</dd>
+          <dt>Queue waiting to upload</dt><dd id="queueDepth">—</dd>
+          <dt>Last error</dt><dd id="lastError">none</dd>
+          <dt>Version</dt><dd id="updateStatus">—</dd>
+        </dl>
+        <label class="inline"><input type="checkbox" id="autoUpdate" /> Install updates automatically (turn off for validated environments)</label>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
