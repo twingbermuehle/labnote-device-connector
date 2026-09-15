@@ -341,7 +341,7 @@ func startRun(t *testing.T, ctx context.Context, barcode string) {
 			Value: ua.MustVariant(barcode),
 		},
 	}}
-	res, err := c.Call(ctx, &ua.CallMethodRequest{
+	req := &ua.CallMethodRequest{
 		ObjectID: state,
 		MethodID: start,
 		InputArguments: []*ua.Variant{
@@ -351,12 +351,22 @@ func startRun(t *testing.T, ctx context.Context, barcode string) {
 			ua.MustVariant("task-1"),
 			ua.MustVariant([]*ua.ExtensionObject{}),
 		},
-	})
-	if err != nil {
-		t.Fatalf("StartProgram: %v", err)
 	}
-	if res.StatusCode != ua.StatusOK {
-		t.Fatalf("StartProgram returned %v", res.StatusCode)
+	// The unit refuses a new run while a previous one is still executing, so
+	// wait for it to become idle first (real instruments behave the same).
+	deadline := time.Now().Add(2 * time.Minute)
+	for {
+		res, err := c.Call(ctx, req)
+		if err != nil {
+			t.Fatalf("StartProgram: %v", err)
+		}
+		if res.StatusCode == ua.StatusOK {
+			return
+		}
+		if res.StatusCode != ua.StatusBadInvalidState || time.Now().After(deadline) {
+			t.Fatalf("StartProgram returned %v", res.StatusCode)
+		}
+		time.Sleep(2 * time.Second)
 	}
 }
 
