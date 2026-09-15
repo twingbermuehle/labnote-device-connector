@@ -1,0 +1,51 @@
+name: simulator-acceptance
+
+# Runs the acceptance suite against the SPECTARIS LADS reference simulator in
+# Docker. This is the closest check to real instrument hardware.
+#
+# Trigger manually: Actions -> simulator-acceptance -> Run workflow
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
+
+jobs:
+  acceptance:
+    name: acceptance against LADS simulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Start LADS simulator
+        run: docker compose -f docker-compose.simulator.yml up -d lads-simulator
+
+      - name: Wait for the simulator endpoint
+        run: |
+          for i in $(seq 1 60); do
+            if timeout 2 bash -c '</dev/tcp/127.0.0.1/4840'; then
+              echo "simulator is listening"; exit 0
+            fi
+            sleep 2
+          done
+          echo "simulator did not come up in time"
+          docker compose -f docker-compose.simulator.yml logs lads-simulator
+          exit 1
+
+      - name: Run acceptance tests
+        env:
+          LADS_SIMULATOR_ENDPOINT: opc.tcp://127.0.0.1:4840
+        run: go test -tags acceptance ./test/acceptance/... -v -timeout 20m
+
+      - name: Simulator logs
+        if: always()
+        run: docker compose -f docker-compose.simulator.yml logs lads-simulator
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.simulator.yml down -v
