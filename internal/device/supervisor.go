@@ -125,10 +125,22 @@ func (s *Supervisor) session(ctx context.Context) error {
 	s.log.Info("connected", "endpoint", s.ins.EndpointURL)
 
 	browser := lads.NewBrowser(client)
-	resultSets, err := browser.ResultSetNodes(ctx, s.ins.LADSNodeID)
+	deviceNode := s.ins.LADSNodeID
+	if deviceNode == "" {
+		// No device chosen during setup: use the single LADS device the server
+		// exposes, so a one-instrument server needs no node id at all.
+		devices, err := browser.Devices(ctx)
+		if err != nil {
+			return fmt.Errorf("discover LADS devices: %w", err)
+		}
+		deviceNode = devices[0].NodeID
+		s.log.Info("device auto-selected", "node_id", deviceNode, "name", devices[0].Name)
+	}
+	resultSets, err := browser.ResultSetNodes(ctx, deviceNode)
 	if err != nil {
 		return fmt.Errorf("browse LADS model: %w", err)
 	}
+
 
 	// Drain results that already finished while the connector was away.
 	for _, rs := range resultSets {
