@@ -23,7 +23,7 @@ jobs:
           cache: true
 
       - name: Start LADS simulator
-        run: docker compose -f docker-compose.simulator.yml up -d lads-simulator
+        run: docker compose -f docker-compose.simulator.yml up -d --build lads-simulator
 
       - name: Wait for the simulator endpoint
         run: |
