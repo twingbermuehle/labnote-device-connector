@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -34,8 +35,18 @@ import (
 //go:embed static
 var staticFS embed.FS
 
-// Addr is the fixed loopback address of the setup UI.
+// Addr is the loopback address of the setup UI.
 const Addr = "127.0.0.1:8420"
+
+// listenAddr returns the bind address. It is 127.0.0.1:8420 everywhere except
+// inside the container image, where the loopback of the container is not the
+// loopback of the host and the published port does the confinement instead.
+func listenAddr() string {
+	if v := strings.TrimSpace(os.Getenv("LABNOTE_CONNECTOR_UI_ADDR")); v != "" {
+		return v
+	}
+	return Addr
+}
 
 // Server is the local UI.
 type Server struct {
@@ -98,7 +109,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		Handler:           loopbackOnly(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	ln, err := net.Listen("tcp", Addr)
+	addr := listenAddr()
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
 	}
@@ -108,19 +120,23 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 	}()
-	s.log.Info("setup interface listening", "url", "http://"+Addr)
+	s.log.Info("setup interface listening", "url", "http://"+addr)
 	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
 }
 
+// allowNonLoopback is only true for the container image, where requests arrive
+// from the Docker bridge rather than the container's own loopback interface.
+var allowNonLoopback = os.Getenv("LABNOTE_CONNECTOR_UI_ADDR") != ""
+
 // loopbackOnly rejects anything that did not arrive over the loopback
 // interface, as belt-and-braces on top of the loopback bind.
 func loopbackOnly(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil || !net.ParseIP(host).IsLoopback() {
+		if err != nil || (!net.ParseIP(host).IsLoopback() && !allowNonLoopback) {
 			http.Error(w, "the connector setup interface is only reachable from this machine", http.StatusForbidden)
 			return
 		}
