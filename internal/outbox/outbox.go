@@ -87,14 +87,16 @@ func (o *Outbox) Enqueue(ctx context.Context, r model.Result) error {
 	return err
 }
 
-// Next returns up to limit due rows in insertion order (strict ordering).
+// Next returns up to limit pending rows in insertion order (strict ordering).
+// Rows are returned regardless of their retry schedule so the caller can hold
+// the queue head: skipping a not-yet-due row would deliver results out of
+// order. Each row carries DueAt for that decision.
 func (o *Outbox) Next(ctx context.Context, limit int) ([]Row, error) {
-	now := time.Now().UTC().Format(time.RFC3339Nano)
 	rows, err := o.db.QueryContext(ctx,
-		`SELECT id, payload, attempts, created_at, last_error
+		`SELECT id, payload, attempts, created_at, last_error, next_attempt_at
 		   FROM outbox
-		  WHERE sent_at IS NULL AND next_attempt_at <= ?
-		  ORDER BY id ASC LIMIT ?`, now, limit)
+		  WHERE sent_at IS NULL
+		  ORDER BY id ASC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -106,14 +108,16 @@ func (o *Outbox) Next(ctx context.Context, limit int) ([]Row, error) {
 			r         Row
 			payload   string
 			createdAt string
+			dueAt     string
 		)
-		if err := rows.Scan(&r.ID, &payload, &r.Attempts, &createdAt, &r.LastError); err != nil {
+		if err := rows.Scan(&r.ID, &payload, &r.Attempts, &createdAt, &r.LastError, &dueAt); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(payload), &r.Result); err != nil {
 			return nil, err
 		}
 		r.CreatedAt, _ = time.Parse(time.RFC3339Nano, createdAt)
+		r.DueAt, _ = time.Parse(time.RFC3339Nano, dueAt)
 		out = append(out, r)
 	}
 	return out, rows.Err()
