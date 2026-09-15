@@ -298,6 +298,10 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read client certificate: %w", err)
 	}
+	clientKey, err := s.pki.ClientPrivateKey()
+	if err != nil {
+		return nil, fmt.Errorf("read client private key: %w", err)
+	}
 
 	// Connect to the address the operator configured, not the one the server
 	// advertises: instruments frequently advertise an internal hostname that
@@ -308,6 +312,9 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 		opcua.CertificateFile(s.pki.CertPath()),
 		opcua.PrivateKeyFile(s.pki.KeyPath()),
 		opcua.AuthCertificate(clientDER),
+		// Certificate login signs the server nonce with this key; without it
+		// the server rejects the session with BadSecurityChecksFailed.
+		opcua.AuthPrivateKey(clientKey),
 		opcua.AutoReconnect(false), // the Run loop owns reconnection
 		opcua.RequestTimeout(20*time.Second),
 	)

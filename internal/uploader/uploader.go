@@ -66,8 +66,14 @@ func (w *Worker) drain(ctx context.Context) {
 		w.log.Error("read outbox failed", "error", err)
 		return
 	}
+	now := time.Now().UTC()
 	for _, row := range rows {
 		if ctx.Err() != nil {
+			return
+		}
+		// The queue head owns ordering: while it is backing off, nothing
+		// behind it may overtake it.
+		if row.DueAt.After(now) {
 			return
 		}
 		err := client.SendResult(ctx, row.Result)

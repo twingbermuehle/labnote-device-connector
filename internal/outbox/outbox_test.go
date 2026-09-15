@@ -91,8 +91,8 @@ func TestMarkSentClearsQueueDepth(t *testing.T) {
 	}
 }
 
-// A failed attempt must be retried later, not immediately, and must not be
-// handed out again before its next attempt time.
+// A failed attempt must be retried later, not immediately. The row stays at
+// the head of the queue (nothing may overtake it) but is marked not yet due.
 func TestMarkFailedSchedulesRetry(t *testing.T) {
 	ctx := context.Background()
 	box := newTestOutbox(t)
@@ -104,8 +104,11 @@ func TestMarkFailedSchedulesRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	again, _ := box.Next(ctx, 1)
-	if len(again) != 0 {
-		t.Fatalf("row was handed out again before its retry time")
+	if len(again) != 1 {
+		t.Fatalf("failed row must stay at the queue head, got %d rows", len(again))
+	}
+	if !again[0].DueAt.After(time.Now().UTC()) {
+		t.Fatalf("failed row must not be due immediately, due_at=%s", again[0].DueAt)
 	}
 	depth, _ := box.Depth(ctx)
 	if depth != 1 {
