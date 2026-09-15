@@ -312,6 +312,9 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 		opcua.CertificateFile(s.pki.CertPath()),
 		opcua.PrivateKeyFile(s.pki.KeyPath()),
 		opcua.AuthCertificate(clientDER),
+		// Certificate login signs the server nonce with this key; without it
+		// the server rejects the session with BadSecurityChecksFailed.
+		opcua.AuthPrivateKey(clientKey),
 		opcua.AutoReconnect(false), // the Run loop owns reconnection
 		opcua.RequestTimeout(20*time.Second),
 	)
