@@ -156,10 +156,20 @@ type stateResponse struct {
 	AutoUpdate    bool               `json:"auto_update"`
 	Fingerprint   string             `json:"client_certificate_fingerprint"`
 	Instruments   []model.Instrument `json:"instruments"`
+	Ingest        ingestInfo         `json:"ingest"`
 	Profiles      []profileInfo      `json:"profiles"`
 	Runtime       state.Snapshot     `json:"runtime"`
 	Heartbeat     model.Heartbeat    `json:"heartbeat"`
 	Update        updater.Status     `json:"update"`
+}
+
+// ingestInfo tells the UI how instruments that push their reports should be
+// configured on the instrument side.
+type ingestInfo struct {
+	Port        int    `json:"port"`
+	Scheme      string `json:"scheme"`
+	Host        string `json:"host"`
+	Fingerprint string `json:"certificate_fingerprint,omitempty"`
 }
 
 type profileInfo struct {
@@ -186,11 +196,36 @@ func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {
 		AutoUpdate:    cfg.AutoUpdate,
 		Fingerprint:   fp,
 		Instruments:   cfg.Instruments,
+		Ingest:        s.ingestInfo(cfg),
 		Profiles:      profs,
 		Runtime:       s.st.Snapshot(),
 		Heartbeat:     s.hb.Payload(),
 		Update:        s.upd.Status(),
 	})
+}
+
+func (s *Server) ingestInfo(cfg config.Config) ingestInfo {
+	scheme := "https"
+	if cfg.IngestInsecureHTTP {
+		scheme = "http"
+	}
+	host, _ := os.Hostname()
+	if ip := primaryIP(); ip != "" {
+		host = ip
+	}
+	return ingestInfo{Port: cfg.IngestPort, Scheme: scheme, Host: host, Fingerprint: s.pki.IngestFingerprint()}
+}
+
+// primaryIP returns this machine's address on the lab network, so the UI can
+// show the exact URL to type into the instrument.
+func primaryIP() string {
+	conn, err := net.Dial("udp", "192.0.2.1:9")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	host, _, _ := net.SplitHostPort(conn.LocalAddr().String())
+	return host
 }
 
 type setupRequest struct {
@@ -254,12 +289,18 @@ func (s *Server) handleSaveInstrument(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &ins) {
 		return
 	}
+	if ins.Kind == "" {
+		ins.Kind = model.KindOPCUA
+	}
 	ins.SecurityMode = model.SecurityModeSignAndEncrypt
 	if ins.SecurityPolicy == "" {
 		ins.SecurityPolicy = model.SecurityPolicyBasic256Sha256
 	}
 	if ins.ID == "" {
 		ins.ID = newID()
+	}
+	if ins.Kind == model.KindPush && len(strings.TrimSpace(ins.IngestToken)) < 24 {
+		ins.IngestToken = newToken()
 	}
 
 	if err := s.cfg.Update(func(c *config.Config) error {
@@ -371,6 +412,13 @@ func (s *Server) handleLogs(w http.ResponseWriter, _ *http.Request) {
 	if err := s.logs.Zip(w); err != nil {
 		s.log.Error("log export failed", "error", err)
 	}
+}
+
+// newToken returns the shared secret an instrument sends with every report.
+func newToken() string {
+	b := make([]byte, 24)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func newID() string {
