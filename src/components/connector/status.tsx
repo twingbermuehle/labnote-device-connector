@@ -11,8 +11,8 @@ const tone: Record<string, string> = {
 };
 
 const dot: Record<string, string> = {
-  connected: "bg-primary",
-  online: "bg-primary",
+  connected: "bg-success",
+  online: "bg-success",
   degraded: "bg-warning",
   disconnected: "bg-destructive",
   error: "bg-destructive",
