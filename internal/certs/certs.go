@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -141,6 +143,83 @@ func (s *Store) ClientPrivateKey() (*rsa.PrivateKey, error) {
 		return nil, errors.New("client private key is not an RSA key")
 	}
 	return key, nil
+}
+
+// EnsureServerCert returns the TLS certificate used by the push ingest
+// listener, generating a long-lived self-signed one on first use. Instruments
+// that push their reports trust this certificate once, the same way they trust
+// the OPC UA client certificate.
+func (s *Store) EnsureServerCert() (tls.Certificate, error) {
+	certPath := filepath.Join(s.dir, "ingest-cert.pem")
+	keyPath := filepath.Join(s.dir, "ingest-key.pem")
+	if cert, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
+		return cert, nil
+	}
+
+	key, err := rsa.GenerateKey(rand.Reader, 3072)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	host, _ := os.Hostname()
+	if host == "" {
+		host = "labnote-connector"
+	}
+	tmpl := x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: host, Organization: []string{"LabNote"}},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().AddDate(5, 0, 0),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{host, "localhost"},
+		IPAddresses:           localIPs(),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("create ingest certificate: %w", err)
+	}
+	if err := writePEM(certPath, "CERTIFICATE", der, 0o644); err != nil {
+		return tls.Certificate{}, err
+	}
+	if err := writePEM(keyPath, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key), 0o600); err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.LoadX509KeyPair(certPath, keyPath)
+}
+
+// IngestFingerprint returns the SHA-256 fingerprint of the push ingest
+// certificate, or "" when it has not been generated yet.
+func (s *Store) IngestFingerprint() string {
+	raw, err := os.ReadFile(filepath.Join(s.dir, "ingest-cert.pem"))
+	if err != nil {
+		return ""
+	}
+	block, _ := pem.Decode(raw)
+	if block == nil {
+		return ""
+	}
+	return FingerprintDER(block.Bytes)
+}
+
+// localIPs lists this machine's addresses so the certificate is valid however
+// the instrument addresses the connector.
+func localIPs() []net.IP {
+	out := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return out
+	}
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			out = append(out, ipnet.IP)
+		}
+	}
+	return out
 }
 
 // FingerprintDER formats a SHA-256 fingerprint as AA:BB:CC...
