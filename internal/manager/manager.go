@@ -67,6 +67,11 @@ func (m *Manager) Reconcile() {
 	cfg := m.cfg.Get()
 	wanted := map[string]model.Instrument{}
 	for _, ins := range cfg.Instruments {
+		// Push instruments are served by the ingest listener, not by an
+		// OPC UA supervisor.
+		if ins.Kind == model.KindPush {
+			continue
+		}
 		wanted[ins.ID] = ins
 	}
 

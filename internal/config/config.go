@@ -17,6 +17,9 @@ import (
 	"github.com/labnote/labnote-device-connector/internal/model"
 )
 
+// DefaultIngestPort is the lab-network port instruments push their reports to.
+const DefaultIngestPort = 8421
+
 // Config is the persisted connector configuration.
 type Config struct {
 	LabNoteURL    string             `json:"labnote_url"`
@@ -24,7 +27,14 @@ type Config struct {
 	Location      string            `json:"location"`
 	AutoUpdate    bool              `json:"auto_update"`
 	SetupComplete bool              `json:"setup_complete"`
-	Instruments   []model.Instrument `json:"instruments"`
+	// IngestPort configures the listener that receives reports
+	// pushed by instruments without OPC UA.
+	IngestPort int `json:"ingest_port"`
+	// IngestInsecureHTTP disables TLS on that listener (plain HTTP). TLS is
+	// the default; only use plain HTTP when the instrument cannot be told to
+	// trust the connector's certificate.
+	IngestInsecureHTTP bool `json:"ingest_insecure_http"`
+	Instruments []model.Instrument `json:"instruments"`
 }
 
 // Store is a concurrency-safe, file-backed Config.
@@ -55,7 +65,7 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
-	s := &Store{path: filepath.Join(dir, "config.json"), cfg: Config{AutoUpdate: true}}
+	s := &Store{path: filepath.Join(dir, "config.json"), cfg: Config{AutoUpdate: true, IngestPort: DefaultIngestPort}}
 	raw, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
@@ -65,6 +75,9 @@ func Open(dir string) (*Store, error) {
 	}
 	if err := json.Unmarshal(raw, &s.cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	if s.cfg.IngestPort == 0 {
+		s.cfg.IngestPort = DefaultIngestPort
 	}
 	return s, nil
 }
@@ -113,7 +126,13 @@ func (s *Store) write(c Config) error {
 // SignAndEncrypt. Anonymous / None endpoints are never accepted.
 var ErrInsecureEndpoint = errors.New("instrument must use Basic256Sha256 / SignAndEncrypt; None and anonymous auth are rejected")
 
-func (c Config) validate() error {
+func (c *Config) validate() error {
+	if c.IngestPort == 0 {
+		c.IngestPort = DefaultIngestPort
+	}
+	if c.IngestPort < 1024 || c.IngestPort > 65535 {
+		return errors.New("ingest_port must be between 1024 and 65535")
+	}
 	if c.LabNoteURL != "" {
 		u, err := url.Parse(c.LabNoteURL)
 		if err != nil || u.Scheme != "https" || u.Host == "" {
@@ -121,6 +140,7 @@ func (c Config) validate() error {
 		}
 	}
 	seen := map[string]bool{}
+	tokens := map[string]bool{}
 	for i := range c.Instruments {
 		ins := &c.Instruments[i]
 		ins.Name = strings.TrimSpace(ins.Name)
@@ -132,6 +152,25 @@ func (c Config) validate() error {
 			return fmt.Errorf("duplicate external_device_id %q", ins.ExternalDeviceID)
 		}
 		seen[ins.ExternalDeviceID] = true
+		if ins.Kind == "" {
+			ins.Kind = model.KindOPCUA
+		}
+		if ins.Kind == model.KindPush {
+			// The instrument connects to us, so there is no endpoint and no
+			// OPC UA security to validate — the token is the credential.
+			ins.IngestToken = strings.TrimSpace(ins.IngestToken)
+			if len(ins.IngestToken) < 24 {
+				return fmt.Errorf("instrument %q: a push instrument needs an ingest token", ins.ExternalDeviceID)
+			}
+			if tokens[ins.IngestToken] {
+				return fmt.Errorf("instrument %q: duplicate ingest token", ins.ExternalDeviceID)
+			}
+			tokens[ins.IngestToken] = true
+			continue
+		}
+		if ins.Kind != model.KindOPCUA {
+			return fmt.Errorf("instrument %q: unknown kind %q", ins.ExternalDeviceID, ins.Kind)
+		}
 		if !strings.HasPrefix(ins.EndpointURL, "opc.tcp://") {
 			return fmt.Errorf("instrument %q: endpoint must start with opc.tcp://", ins.ExternalDeviceID)
 		}

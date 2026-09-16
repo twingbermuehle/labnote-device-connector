@@ -51,6 +51,10 @@
 
         <h3>Add or edit an instrument</h3>
         <div class="grid">
+          <label>How does it connect?<select id="insKind">
+            <option value="opcua">OPC UA instrument (connector reads it)</option>
+            <option value="push">Instrument sends its reports (e.g. Sartorius Cubis II balance)</option>
+          </select></label>
           <label>Friendly name<input id="insName" placeholder="HPLC 07" /></label>
           <label>Device ID<input id="insExternal" placeholder="HPLC-07" /></label>
           <label>OPC UA endpoint<input id="insEndpoint" placeholder="opc.tcp://192.168.1.50:4840" /></label>
@@ -61,6 +65,13 @@
           <label>Mapping profile<select id="insProfile"></select></label>
           <label>Default unit X<input id="insUnitX" placeholder="min" /></label>
           <label>Default unit Y<input id="insUnitY" placeholder="mAU" /></label>
+        </div>
+        <div class="card" id="pushBox" hidden>
+          <h3>Address for the instrument</h3>
+          <p>Enter this in the balance under Settings / Connectors as an HTTPS connector, then send every weighing report to it:</p>
+          <code id="pushUrl">save the instrument to generate its address</code>
+          <p class="hint">The balance must trust this certificate fingerprint (or allow unknown certificate authorities):</p>
+          <code id="pushFingerprint">—</code>
         </div>
         <p class="hint">Security is fixed to Basic256Sha256 / SignAndEncrypt with mutual certificates. Unencrypted and anonymous connections are refused.</p>
         <div class="actions">

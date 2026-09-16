@@ -15,6 +15,7 @@ import (
 	"github.com/labnote/labnote-device-connector/internal/certs"
 	"github.com/labnote/labnote-device-connector/internal/config"
 	"github.com/labnote/labnote-device-connector/internal/heartbeat"
+	"github.com/labnote/labnote-device-connector/internal/ingest"
 	"github.com/labnote/labnote-device-connector/internal/keychain"
 	"github.com/labnote/labnote-device-connector/internal/labnote"
 	"github.com/labnote/labnote-device-connector/internal/logging"
@@ -109,6 +110,11 @@ func run(dataDir string, debug bool) error {
 
 	mgr.Start(ctx)
 	go up.Run(ctx)
+	go func() {
+		if err := ingest.New(cfgStore, pki, box, st, log).ListenAndServe(ctx); err != nil {
+			log.Error("push ingest failed", "error", err)
+		}
+	}()
 	go hb.Run(ctx)
 	go upd.Run(ctx)
 

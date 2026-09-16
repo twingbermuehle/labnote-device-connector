@@ -27,9 +27,22 @@ const (
 	ConnectorOffline  = "offline"
 )
 
-// Instrument is one configured OPC UA / LADS device.
+// Instrument kinds. KindOPCUA is an OPC UA / LADS instrument the connector
+// subscribes to. KindPush is an instrument without OPC UA (for example a
+// Sartorius Cubis II balance) that sends every finished measurement to the
+// connector over HTTP(S).
+const (
+	KindOPCUA = "opcua"
+	KindPush  = "push"
+)
+
+// Instrument is one configured instrument.
 type Instrument struct {
 	ID               string `json:"id" yaml:"id"`
+	Kind             string `json:"kind" yaml:"kind"`
+	// IngestToken authenticates a push instrument's reports. Only used when
+	// Kind is KindPush.
+	IngestToken      string `json:"ingest_token" yaml:"ingest_token"`
 	Name             string `json:"name" yaml:"name"`
 	ExternalDeviceID string `json:"external_device_id" yaml:"external_device_id"`
 	EndpointURL      string `json:"opcua_endpoint_url" yaml:"opcua_endpoint_url"`

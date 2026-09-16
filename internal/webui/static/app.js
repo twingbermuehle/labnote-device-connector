@@ -21,6 +21,7 @@ function hint(el, message, kind) {
 function instrumentForm() {
   return {
     id: $("insId").value,
+    kind: $("insKind").value,
     name: $("insName").value,
     external_device_id: $("insExternal").value,
     opcua_endpoint_url: $("insEndpoint").value,
@@ -38,6 +39,8 @@ function instrumentForm() {
 
 function fillForm(ins) {
   $("insId").value = ins.id || "";
+  $("insKind").value = ins.kind || "opcua";
+  showPush(ins);
   $("insName").value = ins.name || "";
   $("insExternal").value = ins.external_device_id || "";
   $("insEndpoint").value = ins.opcua_endpoint_url || "";
@@ -48,6 +51,18 @@ function fillForm(ins) {
   $("insProfile").value = ins.profile || "generic-lads";
   $("insUnitX").value = ins.default_unit_x || "";
   $("insUnitY").value = ins.default_unit_y || "";
+}
+
+// showPush reveals the push address for instruments that send their reports.
+function showPush(ins) {
+  const push = $("insKind").value === "push";
+  $("pushBox").hidden = !push;
+  if (!push || !latest) return;
+  const i = latest.ingest || {};
+  $("pushFingerprint").textContent = i.certificate_fingerprint || "generated when the first push instrument is saved";
+  $("pushUrl").textContent = ins && ins.ingest_token
+    ? `${i.scheme}://${i.host}:${i.port}/ingest/${ins.ingest_token}`
+    : "save the instrument to generate its address";
 }
 
 function renderInstruments(s) {
@@ -63,7 +78,7 @@ function renderInstruments(s) {
     tr.innerHTML = `
       <td>${escape(ins.name)}</td>
       <td>${escape(ins.external_device_id)}</td>
-      <td>${escape(ins.opcua_endpoint_url)}</td>
+      <td>${escape(ins.kind === "push" ? "pushes reports to this connector" : ins.opcua_endpoint_url)}</td>
       <td><span class="pill ${status}">${status}</span></td>
       <td>${live.last_result_at ? new Date(live.last_result_at).toLocaleString() : "—"}</td>
       <td></td>`;
@@ -197,6 +212,8 @@ $("testInstrument").addEventListener("click", async () => {
     hint($("instrumentHint"), err.message, "bad");
   }
 });
+
+$("insKind").addEventListener("change", () => showPush(null));
 
 $("autoUpdate").addEventListener("change", async (e) => {
   await api("/api/settings", { method: "POST", body: JSON.stringify({ auto_update: e.target.checked }) });
