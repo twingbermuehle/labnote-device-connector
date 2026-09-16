@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"github.com/labnote/labnote-device-connector/internal/certs"
 	"github.com/labnote/labnote-device-connector/internal/lads"
 	"github.com/labnote/labnote-device-connector/internal/device"
+	"github.com/labnote/labnote-device-connector/internal/discovery"
 	"github.com/labnote/labnote-device-connector/internal/labnote"
 	"github.com/labnote/labnote-device-connector/internal/model"
 	"github.com/labnote/labnote-device-connector/internal/outbox"
@@ -424,4 +426,82 @@ func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 		time.Sleep(500 * time.Millisecond)
 	}
 	t.Fatalf("condition not met within %s", timeout)
+}
+
+// 5. The network search must find the instrument and report it as usable.
+func TestNetworkSearchFindsTheInstrument(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	addr := strings.TrimPrefix(endpoint(), "opc.tcp://")
+	found, ok := discovery.Identify(ctx, addr)
+	if !ok {
+		t.Fatalf("the instrument at %s was not recognised as an OPC UA server", addr)
+	}
+	if !found.Secure {
+		t.Fatalf("instrument reported as unusable: %s", found.Note)
+	}
+	if found.ServerName == "" {
+		t.Fatal("no server name reported")
+	}
+	t.Logf("found %q at %s", found.ServerName, found.EndpointURL)
+
+	// A scan of the local networks must include the instrument too.
+	servers, err := discovery.Scan(ctx, discovery.Options{
+		Extra: []string{addr},
+		Ports: []int{},
+	})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	for _, s := range servers {
+		if s.Address == addr {
+			return
+		}
+	}
+	t.Fatalf("scan returned %d server(s), none of them %s", len(servers), addr)
+}
+
+// 6. Parameter detection must list what the instrument measures, with units.
+func TestParameterDetectionListsMeasurements(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	_, st, ins, _, pki := harness(t)
+	trust := &pinAll{}
+	if report := device.TestConnection(ctx, ins, pki, trust, st, testLogger()); report.ServerFingerprint != "" {
+		_ = trust.Pin(ins.ID, report.ServerFingerprint)
+	}
+	startRun(t, ctx, fmt.Sprintf("BC-PARAM-%d", time.Now().UnixNano()))
+
+	var rep device.ParameterReport
+	waitFor(t, 2*time.Minute, func() bool {
+		rep = device.DetectParameters(ctx, ins, pki, trust, st, testLogger())
+		for _, p := range rep.Parameters {
+			if p.Kind == "series" {
+				return true
+			}
+		}
+		return false
+	})
+	if rep.NodeID == "" {
+		t.Fatal("no device node reported")
+	}
+
+	curves, expected := 0, 0
+	for _, p := range rep.Parameters {
+		switch p.Kind {
+		case "series":
+			curves++
+		case "expected":
+			expected++
+		}
+		if p.Kind != "expected" && !p.Recommended {
+			t.Fatalf("measured parameter %q was not pre-selected", p.Name)
+		}
+		t.Logf("parameter %q kind=%s unit=%q path=%s", p.Name, p.Kind, p.Unit, p.Path)
+	}
+	if curves == 0 {
+		t.Fatalf("no measurement curve detected among %d parameter(s)", len(rep.Parameters))
+	}
 }

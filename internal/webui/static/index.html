@@ -49,6 +49,15 @@
           <tbody></tbody>
         </table>
 
+        <h3>Find instruments</h3>
+        <p class="hint">Searches this network for OPC UA / LADS instruments. Takes up to a minute.</p>
+        <div class="actions">
+          <button id="discover" class="secondary">Search for instruments</button>
+          <input id="discoverExtra" placeholder="other address, optional, e.g. 10.0.5.20" />
+        </div>
+        <div id="discoverResults"></div>
+        <p class="hint" id="discoverHint"></p>
+
         <h3>Add or edit an instrument</h3>
         <div class="grid">
           <label>How does it connect?<select id="insKind">
@@ -73,9 +82,15 @@
           <p class="hint">The balance must trust this certificate fingerprint (or allow unknown certificate authorities):</p>
           <code id="pushFingerprint">—</code>
         </div>
+        <div class="card" id="paramBox" hidden>
+          <h3>Measurable parameters</h3>
+          <p class="hint">Detected on the instrument. Ticked parameters are sent to LabNote.</p>
+          <div id="paramList"></div>
+        </div>
         <p class="hint">Security is fixed to Basic256Sha256 / SignAndEncrypt with mutual certificates. Unencrypted and anonymous connections are refused.</p>
         <div class="actions">
           <button id="testInstrument" class="secondary">Test connection</button>
+          <button id="detectParams" class="secondary">Detect parameters</button>
           <button id="saveInstrument">Save instrument</button>
           <input type="hidden" id="insId" />
         </div>

@@ -53,6 +53,10 @@ type Instrument struct {
 	DeviceType       string `json:"device_type" yaml:"device_type"`
 	LADSNodeID       string `json:"lads_node_id" yaml:"lads_node_id"`
 	Profile          string `json:"profile" yaml:"profile"`
+	// Parameters are the measurable quantities detected on the instrument.
+	// Only enabled ones are sent to LabNote; an empty list means "send what
+	// the mapping profile finds", which is the behaviour of older configs.
+	Parameters       []Parameter `json:"parameters,omitempty" yaml:"parameters,omitempty"`
 	DefaultUnitX     string `json:"default_unit_x" yaml:"default_unit_x"`
 	DefaultUnitY     string `json:"default_unit_y" yaml:"default_unit_y"`
 
@@ -60,6 +64,32 @@ type Instrument struct {
 	// Empty means "not yet pinned" and the first connect requires an explicit
 	// confirmation in the local UI.
 	ServerCertSHA256 string `json:"server_cert_sha256" yaml:"server_cert_sha256"`
+}
+
+// Parameter is one measurable quantity of an instrument, as detected during
+// setup. Path is relative to the instrument's result object.
+type Parameter struct {
+	Name    string `json:"name" yaml:"name"`
+	Path    string `json:"path" yaml:"path"`
+	Unit    string `json:"unit,omitempty" yaml:"unit,omitempty"`
+	Kind    string `json:"kind" yaml:"kind"`
+	Enabled bool   `json:"enabled" yaml:"enabled"`
+}
+
+// EnabledParameters splits the instrument's enabled parameters into curve paths
+// and single-value paths, in the order the operator sees them.
+func (i Instrument) EnabledParameters() (series []string, values []string) {
+	for _, p := range i.Parameters {
+		if !p.Enabled || p.Path == "" {
+			continue
+		}
+		if p.Kind == "series" {
+			series = append(series, p.Path)
+			continue
+		}
+		values = append(values, p.Path)
+	}
+	return series, values
 }
 
 // DeviceState is the live runtime state of one instrument.

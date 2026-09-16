@@ -393,3 +393,43 @@ func (nopSink) Enqueue(context.Context, model.Result) error { return nil }
 
 // compile-time assertion that the outbox satisfies Sink.
 var _ Sink = (*outbox.Outbox)(nil)
+
+// ParameterReport is the answer to "what does this instrument measure?".
+type ParameterReport struct {
+	OK         bool             `json:"ok"`
+	Message    string           `json:"message"`
+	DeviceName string           `json:"device_name,omitempty"`
+	NodeID     string           `json:"lads_node_id,omitempty"`
+	Parameters []lads.Parameter `json:"parameters"`
+}
+
+// DetectParameters dials the instrument once and lists its measurable
+// quantities, so the setup UI can offer them for selection.
+func DetectParameters(ctx context.Context, ins model.Instrument, pki *certs.Store, trust TrustStore, st *state.Store, log *slog.Logger) ParameterReport {
+	sup := New(ins, profiles.Profile{}, pki, nopSink{}, st, trust, log)
+	client, err := sup.dial(ctx)
+	if err != nil {
+		return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
+	}
+	defer func() { _ = client.Close(context.WithoutCancel(ctx)) }()
+
+	b := lads.NewBrowser(client)
+	node := ins.LADSNodeID
+	name := ""
+	if node == "" {
+		devices, err := b.Devices(ctx)
+		if err != nil {
+			return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
+		}
+		node, name = devices[0].NodeID, devices[0].Name
+	}
+	params, err := b.Parameters(ctx, node)
+	if err != nil {
+		return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
+	}
+	msg := fmt.Sprintf("Found %d measurable parameter(s).", len(params))
+	if len(params) == 0 {
+		msg = "Connected, but the instrument reports no measurable parameters yet. Run one measurement and detect again."
+	}
+	return ParameterReport{OK: true, Message: msg, DeviceName: name, NodeID: node, Parameters: params}
+}

@@ -57,3 +57,18 @@ export const devices: {
 export const profileOptions = [
   { id: "generic-lads", label: "Base LADS companion specification (SPECTARIS reference server)" },
 ];
+
+/** Instruments found on the network by the connector's search. */
+export const discovered: { name: string; endpoint: string; added: boolean }[] = [
+  { name: "LADS LuminescenceReader", endpoint: "opc.tcp://192.168.1.42:4840", added: false },
+  { name: "Agilent 1260 Infinity II", endpoint: "opc.tcp://192.168.1.50:4840", added: true },
+  { name: "Mettler Toledo XPR", endpoint: "opc.tcp://192.168.1.61:4840", added: false },
+];
+
+/** Measurable parameters detected on the selected instrument. */
+export const parameters: { name: string; unit?: string; kind: string; enabled: boolean }[] = [
+  { name: "Luminescence", unit: "RLU", kind: "series", enabled: true },
+  { name: "Temperature", unit: "°C", kind: "value", enabled: true },
+  { name: "ShakerController", kind: "expected", enabled: false },
+  { name: "WastePump", kind: "expected", enabled: false },
+];
