@@ -1,8 +1,8 @@
 import type { DeviceStatus } from "./sample-data";
 
 const tone: Record<string, string> = {
-  connected: "text-primary border-primary/40 bg-primary/10",
-  online: "text-primary border-primary/40 bg-primary/10",
+  connected: "text-success border-success/40 bg-success/10",
+  online: "text-success border-success/40 bg-success/10",
   degraded: "text-warning border-warning/40 bg-warning/10",
   disconnected: "text-destructive border-destructive/40 bg-destructive/10",
   error: "text-destructive border-destructive/40 bg-destructive/10",
@@ -11,8 +11,8 @@ const tone: Record<string, string> = {
 };
 
 const dot: Record<string, string> = {
-  connected: "bg-primary",
-  online: "bg-primary",
+  connected: "bg-success",
+  online: "bg-success",
   degraded: "bg-warning",
   disconnected: "bg-destructive",
   error: "bg-destructive",
