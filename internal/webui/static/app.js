@@ -123,6 +123,14 @@ function fillForm(ins) {
 function showPush(ins) {
   const push = $("insKind").value === "push";
   $("pushBox").hidden = !push;
+  // Fields and buttons that only apply to instruments the connector reads.
+  for (const id of ["rowEndpoint", "rowNode", "rowProfile"]) {
+    $(id).hidden = push;
+  }
+  $("detectParams").hidden = push;
+  $("paramBox").hidden = push || $("paramBox").hidden;
+  $("securityHint").hidden = push;
+  $("testInstrument").textContent = push ? "Check for a report" : "Test connection";
   if (!push || !latest) return;
   const i = latest.ingest || {};
   $("pushFingerprint").textContent = i.certificate_fingerprint || "generated when the first push instrument is saved";
@@ -280,7 +288,7 @@ $("testInstrument").addEventListener("click", async () => {
 });
 
 $("discover").addEventListener("click", async () => {
-  hint($("discoverHint"), "Searching the network…");
+  hint($("discoverHint"), "Searching the network… this takes up to a minute.");
   $("discover").disabled = true;
   try {
     const extra = $("discoverExtra").value.trim();
@@ -298,6 +306,7 @@ $("discover").addEventListener("click", async () => {
 
 $("detectParams").addEventListener("click", async () => {
   hint($("instrumentHint"), "Asking the instrument what it measures…");
+  $("detectParams").disabled = true;
   try {
     const report = await api("/api/instruments/parameters", {
       method: "POST",
@@ -308,6 +317,8 @@ $("detectParams").addEventListener("click", async () => {
     hint($("instrumentHint"), report.message, report.ok ? "ok" : "bad");
   } catch (err) {
     hint($("instrumentHint"), err.message, "bad");
+  } finally {
+    $("detectParams").disabled = false;
   }
 });
 

@@ -66,12 +66,12 @@
           </select></label>
           <label>Friendly name<input id="insName" placeholder="HPLC 07" /></label>
           <label>Device ID<input id="insExternal" placeholder="HPLC-07" /></label>
-          <label>OPC UA endpoint<input id="insEndpoint" placeholder="opc.tcp://192.168.1.50:4840" /></label>
+          <label id="rowEndpoint">OPC UA endpoint<input id="insEndpoint" placeholder="opc.tcp://192.168.1.50:4840" /></label>
           <label>Vendor<input id="insVendor" placeholder="agilent" /></label>
           <label>Model<input id="insModel" placeholder="1260 Infinity II" /></label>
           <label>Device type<input id="insType" placeholder="hplc" /></label>
-          <label>LADS device node<input id="insNode" placeholder="ns=2;i=5001" /></label>
-          <label>Mapping profile<select id="insProfile"></select></label>
+          <label id="rowNode">LADS device node (leave empty — filled in automatically)<input id="insNode" placeholder="ns=2;i=5001" /></label>
+          <label id="rowProfile">Mapping profile<select id="insProfile"></select></label>
           <label>Default unit X<input id="insUnitX" placeholder="min" /></label>
           <label>Default unit Y<input id="insUnitY" placeholder="mAU" /></label>
         </div>
@@ -87,10 +87,12 @@
           <p class="hint">Detected on the instrument. Ticked parameters are sent to LabNote.</p>
           <div id="paramList"></div>
         </div>
-        <p class="hint">Security is fixed to Basic256Sha256 / SignAndEncrypt with mutual certificates. Unencrypted and anonymous connections are refused.</p>
+        <p class="hint" id="securityHint">Security is fixed to Basic256Sha256 / SignAndEncrypt with mutual certificates. Unencrypted and anonymous connections are refused.</p>
         <div class="actions">
           <button id="testInstrument" class="secondary">Test connection</button>
+          <span id="opcuaActions" style="display:contents">
           <button id="detectParams" class="secondary">Detect parameters</button>
+          </span>
           <button id="saveInstrument">Save instrument</button>
           <input type="hidden" id="insId" />
         </div>
