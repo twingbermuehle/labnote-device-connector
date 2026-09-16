@@ -128,6 +128,7 @@ type Result struct {
 // HeartbeatDevice is the per-device payload of the heartbeat.
 type HeartbeatDevice struct {
 	ExternalDeviceID string `json:"external_device_id"`
+	Name             string `json:"name,omitempty"`
 	Vendor           string `json:"vendor,omitempty"`
 	Model            string `json:"model,omitempty"`
 	DeviceType       string `json:"device_type,omitempty"`
