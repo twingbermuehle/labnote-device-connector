@@ -45,7 +45,10 @@ func Build(
 		LADS:             map[string]any{},
 	}
 
-	ys, unitY, okY := b.ReadFloatsPath(ctx, resultNode, prof.SeriesYPaths)
+	// Parameters chosen during setup win over the profile's guesses.
+	chosenSeries, chosenValues := ins.EnabledParameters()
+
+	ys, unitY, okY := b.ReadFloatsPath(ctx, resultNode, append(chosenSeries, prof.SeriesYPaths...))
 	if !okY {
 		ys, unitY, okY = b.FirstNumericArrayBelow(ctx, resultNode, prof.SeriesContainerPaths)
 	}
@@ -59,7 +62,7 @@ func Build(
 	// Scalars and everything else the profile points at go into summary, and
 	// the raw node values are preserved under "lads" for audit reproducibility.
 	rawNodes := map[string]any{}
-	for _, path := range prof.ScalarPaths {
+	for _, path := range append(chosenValues, prof.ScalarPaths...) {
 		v, err := b.ReadPath(ctx, resultNode, path)
 		if err != nil || v == nil {
 			continue
