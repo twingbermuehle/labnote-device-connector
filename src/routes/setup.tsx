@@ -3,7 +3,13 @@ import type { ReactNode } from "react";
 
 import { Shell } from "@/components/connector/shell";
 import { StatusPill } from "@/components/connector/status";
-import { connector, devices, profileOptions } from "@/components/connector/sample-data";
+import {
+  connector,
+  devices,
+  discovered,
+  parameters,
+  profileOptions,
+} from "@/components/connector/sample-data";
 
 export const Route = createFileRoute("/setup")({
   head: () => ({
@@ -114,6 +120,37 @@ function Setup() {
           <Field label="Mapping profile" value={profileOptions[0]!.label} />
           <Field label="Default units" value="min / mAU" mono />
         </div>
+        <h3 className="mt-6 text-sm font-semibold">Measurable parameters</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Detected on the instrument. Ticked parameters are sent to LabNote.
+        </p>
+        <ul className="mt-3 space-y-2">
+          {parameters.map((p) => (
+            <li key={p.name} className="flex items-center gap-3 text-sm">
+              <input
+                type="checkbox"
+                defaultChecked={p.enabled}
+                disabled={p.kind === "expected"}
+                className="size-4 accent-primary"
+              />
+              <span>{p.name}</span>
+              {p.unit ? (
+                <span className="font-mono text-[0.7rem] text-muted-foreground">{p.unit}</span>
+              ) : null}
+              <span className="text-xs text-muted-foreground">
+                {p.kind === "series"
+                  ? "curve"
+                  : p.kind === "value"
+                    ? "single value"
+                    : "appears after the first measurement"}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3">
+          <Button variant="ghost">Detect parameters</Button>
+        </div>
+
         <p className="mt-4 text-xs text-muted-foreground">
           Connections are always encrypted and signed with certificates on both sides. Instruments
           that only offer unencrypted or unauthenticated access are refused.
