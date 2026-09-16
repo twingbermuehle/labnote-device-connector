@@ -88,6 +88,7 @@ func (w *Worker) Payload() model.Heartbeat {
 		}
 		devices = append(devices, model.HeartbeatDevice{
 			ExternalDeviceID: ins.ExternalDeviceID,
+			Name:             ins.Name,
 			Vendor:           ins.Vendor,
 			Model:            ins.Model,
 			DeviceType:       ins.DeviceType,
