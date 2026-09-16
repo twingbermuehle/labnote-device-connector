@@ -348,6 +348,18 @@ func (s *Server) handleTestInstrument(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &ins) {
 		return
 	}
+	if ins.Kind == model.KindPush {
+		// Nothing to dial: the instrument connects to us. The check is simply
+		// whether a report has already arrived.
+		msg := "Saved. Enter the address below in the balance and run one weighing — the result appears here."
+		for _, d := range s.st.Snapshot().Devices {
+			if d.ExternalDeviceID == ins.ExternalDeviceID && d.LastResultAt != nil {
+				msg = "Reports from this instrument are arriving."
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "message": msg})
+		return
+	}
 	ins.SecurityMode = model.SecurityModeSignAndEncrypt
 	if ins.SecurityPolicy == "" {
 		ins.SecurityPolicy = model.SecurityPolicyBasic256Sha256
