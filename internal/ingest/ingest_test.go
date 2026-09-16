@@ -110,7 +110,7 @@ func newServer(t *testing.T) (*Server, *memSink) {
 		t.Fatal(err)
 	}
 	sink := &memSink{}
-	return New(cfg, pki, sink, state.New(), slog.New(slog.DiscardHandler)), sink
+	return New(cfg, pki, sink, state.New(), slog.New(slog.NewTextHandler(io.Discard, nil))), sink
 }
 
 func TestHTTPPushIsQueued(t *testing.T) {
