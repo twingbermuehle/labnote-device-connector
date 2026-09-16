@@ -22,6 +22,7 @@ function instrumentForm() {
   return {
     id: $("insId").value,
     kind: $("insKind").value,
+    parameters: detectedParams.filter((p) => p.path),
     name: $("insName").value,
     external_device_id: $("insExternal").value,
     opcua_endpoint_url: $("insEndpoint").value,
@@ -37,10 +38,75 @@ function instrumentForm() {
   };
 }
 
+// --- discovered instruments ---------------------------------------------
+
+function renderDiscovered(servers) {
+  const box = $("discoverResults");
+  box.innerHTML = "";
+  if (!servers.length) {
+    hint($("discoverHint"), "No OPC UA instruments answered on this network. Enter the address by hand.", "bad");
+    return;
+  }
+  const table = document.createElement("table");
+  table.innerHTML = "<thead><tr><th>Instrument</th><th>Address</th><th></th></tr></thead><tbody></tbody>";
+  const body = table.querySelector("tbody");
+  servers.forEach((srv) => {
+    const row = document.createElement("tr");
+    const name = document.createElement("td");
+    name.textContent = srv.server_name || "OPC UA server";
+    const addr = document.createElement("td");
+    addr.textContent = srv.endpoint_url + (srv.note ? " — " + srv.note : "");
+    const act = document.createElement("td");
+    if (srv.already_added) {
+      act.textContent = "already added";
+    } else {
+      act.appendChild(button("Use this", "secondary", () => {
+        $("insKind").value = "opcua";
+        showPush(null);
+        $("insEndpoint").value = srv.endpoint_url;
+        if (!$("insName").value) $("insName").value = srv.server_name || "";
+        hint($("instrumentHint"), "Address filled in. Give it a device ID, then Test connection.", "ok");
+      }));
+    }
+    row.append(name, addr, act);
+    body.appendChild(row);
+  });
+  box.appendChild(table);
+  hint($("discoverHint"), `Found ${servers.length} instrument(s).`, "ok");
+}
+
+// --- parameters ----------------------------------------------------------
+
+let detectedParams = [];
+
+function renderParams(params) {
+  detectedParams = params || [];
+  $("paramBox").hidden = detectedParams.length === 0;
+  const list = $("paramList");
+  list.innerHTML = "";
+  detectedParams.forEach((p, i) => {
+    const label = document.createElement("label");
+    label.className = "inline";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = !!p.enabled;
+    box.disabled = p.kind === "expected";
+    box.addEventListener("change", () => { detectedParams[i].enabled = box.checked; });
+    const text = document.createElement("span");
+    let suffix = p.unit ? ` (${p.unit})` : "";
+    if (p.kind === "series") suffix += " — curve";
+    if (p.kind === "expected") suffix += " — appears after the first measurement";
+    text.textContent = ` ${p.name}${suffix}`;
+    label.append(box, text);
+    list.appendChild(label);
+  });
+}
+
 function fillForm(ins) {
   $("insId").value = ins.id || "";
   $("insKind").value = ins.kind || "opcua";
   showPush(ins);
+  renderParams(ins.parameters || []);
   $("insName").value = ins.name || "";
   $("insExternal").value = ins.external_device_id || "";
   $("insEndpoint").value = ins.opcua_endpoint_url || "";
@@ -208,6 +274,38 @@ $("testInstrument").addEventListener("click", async () => {
     const devices = (report.devices || []).map((d) => `${d.name} (${d.model || "unknown model"})`).join(", ");
     hint($("instrumentHint"), report.message + (devices ? " — " + devices : ""), report.ok ? "ok" : "bad");
     refresh();
+  } catch (err) {
+    hint($("instrumentHint"), err.message, "bad");
+  }
+});
+
+$("discover").addEventListener("click", async () => {
+  hint($("discoverHint"), "Searching the network…");
+  $("discover").disabled = true;
+  try {
+    const extra = $("discoverExtra").value.trim();
+    const res = await api("/api/discover", {
+      method: "POST",
+      body: JSON.stringify({ extra: extra ? [extra] : [] }),
+    });
+    renderDiscovered(res.servers || []);
+  } catch (err) {
+    hint($("discoverHint"), err.message, "bad");
+  } finally {
+    $("discover").disabled = false;
+  }
+});
+
+$("detectParams").addEventListener("click", async () => {
+  hint($("instrumentHint"), "Asking the instrument what it measures…");
+  try {
+    const report = await api("/api/instruments/parameters", {
+      method: "POST",
+      body: JSON.stringify(instrumentForm()),
+    });
+    renderParams((report.parameters || []).map((p) => ({ ...p, enabled: !!p.recommended })));
+    if (report.lads_node_id && !$("insNode").value) $("insNode").value = report.lads_node_id;
+    hint($("instrumentHint"), report.message, report.ok ? "ok" : "bad");
   } catch (err) {
     hint($("instrumentHint"), err.message, "bad");
   }
