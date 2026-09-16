@@ -477,7 +477,12 @@ func TestParameterDetectionListsMeasurements(t *testing.T) {
 	var rep device.ParameterReport
 	waitFor(t, 2*time.Minute, func() bool {
 		rep = device.DetectParameters(ctx, ins, pki, trust, st, testLogger())
-		return rep.OK && len(rep.Parameters) > 0
+		for _, p := range rep.Parameters {
+			if p.Kind == "series" {
+				return true
+			}
+		}
+		return false
 	})
 	if rep.NodeID == "" {
 		t.Fatal("no device node reported")
