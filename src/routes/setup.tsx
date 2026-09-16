@@ -77,6 +77,31 @@ function Setup() {
           ))}
         </ul>
 
+        <h3 className="mt-6 text-sm font-semibold">Find instruments</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Searches this network for OPC UA / LADS instruments and fills in their address.
+        </p>
+        <ul className="mt-3 divide-y divide-border rounded-lg border border-border">
+          {discovered.map((s) => (
+            <li key={s.endpoint} className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <span className="text-sm font-medium">{s.name}</span>
+              <span className="font-mono text-[0.7rem] text-muted-foreground">{s.endpoint}</span>
+              <span className="ml-auto">
+                {s.added ? (
+                  <span className="text-xs text-muted-foreground">already added</span>
+                ) : (
+                  <Button small variant="ghost">
+                    Use this
+                  </Button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3">
+          <Button variant="ghost">Search for instruments</Button>
+        </div>
+
         <h3 className="mt-6 text-sm font-semibold">Add an instrument</h3>
         <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Friendly name" value="HPLC 07" />
