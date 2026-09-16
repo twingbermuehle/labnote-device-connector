@@ -86,7 +86,7 @@ func (s *Server) serve(ctx context.Context, cfg config.Config) error {
 	}()
 
 	scheme := "http"
-	if cfg.IngestTLS {
+	if !cfg.IngestInsecureHTTP {
 		scheme = "https"
 		cert, err := s.pki.EnsureServerCert()
 		if err != nil {
@@ -97,7 +97,7 @@ func (s *Server) serve(ctx context.Context, cfg config.Config) error {
 	}
 	s.log.Info("push ingest listening", "url", fmt.Sprintf("%s://<this-computer>:%d/ingest/<token>", scheme, cfg.IngestPort))
 
-	if cfg.IngestTLS {
+	if !cfg.IngestInsecureHTTP {
 		err = srv.ServeTLS(ln, "", "")
 	} else {
 		err = srv.Serve(ln)

@@ -29,8 +29,11 @@ type Config struct {
 	SetupComplete bool              `json:"setup_complete"`
 	// IngestPort and IngestTLS configure the listener that receives reports
 	// pushed by instruments without OPC UA.
-	IngestPort  int  `json:"ingest_port"`
-	IngestTLS   bool `json:"ingest_tls"`
+	IngestPort int `json:"ingest_port"`
+	// IngestInsecureHTTP disables TLS on that listener (plain HTTP). TLS is
+	// the default; only use plain HTTP when the instrument cannot be told to
+	// trust the connector's certificate.
+	IngestInsecureHTTP bool `json:"ingest_insecure_http"`
 	Instruments []model.Instrument `json:"instruments"`
 }
 
@@ -120,7 +123,13 @@ func (s *Store) write(c Config) error {
 // SignAndEncrypt. Anonymous / None endpoints are never accepted.
 var ErrInsecureEndpoint = errors.New("instrument must use Basic256Sha256 / SignAndEncrypt; None and anonymous auth are rejected")
 
-func (c Config) validate() error {
+func (c *Config) validate() error {
+	if c.IngestPort == 0 {
+		c.IngestPort = DefaultIngestPort
+	}
+	if c.IngestPort < 1024 || c.IngestPort > 65535 {
+		return errors.New("ingest_port must be between 1024 and 65535")
+	}
 	if c.LabNoteURL != "" {
 		u, err := url.Parse(c.LabNoteURL)
 		if err != nil || u.Scheme != "https" || u.Host == "" {
