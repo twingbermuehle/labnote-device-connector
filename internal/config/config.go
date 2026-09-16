@@ -27,7 +27,7 @@ type Config struct {
 	Location      string            `json:"location"`
 	AutoUpdate    bool              `json:"auto_update"`
 	SetupComplete bool              `json:"setup_complete"`
-	// IngestPort and IngestTLS configure the listener that receives reports
+	// IngestPort configures the listener that receives reports
 	// pushed by instruments without OPC UA.
 	IngestPort int `json:"ingest_port"`
 	// IngestInsecureHTTP disables TLS on that listener (plain HTTP). TLS is
@@ -65,7 +65,7 @@ func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("create data dir: %w", err)
 	}
-	s := &Store{path: filepath.Join(dir, "config.json"), cfg: Config{AutoUpdate: true}}
+	s := &Store{path: filepath.Join(dir, "config.json"), cfg: Config{AutoUpdate: true, IngestPort: DefaultIngestPort}}
 	raw, err := os.ReadFile(s.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
@@ -75,6 +75,9 @@ func Open(dir string) (*Store, error) {
 	}
 	if err := json.Unmarshal(raw, &s.cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	if s.cfg.IngestPort == 0 {
+		s.cfg.IngestPort = DefaultIngestPort
 	}
 	return s, nil
 }
