@@ -21,6 +21,7 @@ import (
 	"github.com/labnote/labnote-device-connector/internal/certs"
 	"github.com/labnote/labnote-device-connector/internal/config"
 	"github.com/labnote/labnote-device-connector/internal/device"
+	"github.com/labnote/labnote-device-connector/internal/discovery"
 	"github.com/labnote/labnote-device-connector/internal/heartbeat"
 	"github.com/labnote/labnote-device-connector/internal/keychain"
 	"github.com/labnote/labnote-device-connector/internal/labnote"
@@ -101,6 +102,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	mux.HandleFunc("POST /api/instruments", s.handleSaveInstrument)
 	mux.HandleFunc("DELETE /api/instruments/{id}", s.handleDeleteInstrument)
 	mux.HandleFunc("POST /api/instruments/test", s.handleTestInstrument)
+	mux.HandleFunc("POST /api/instruments/parameters", s.handleDetectParameters)
+	mux.HandleFunc("POST /api/discover", s.handleDiscover)
 	mux.HandleFunc("POST /api/instruments/{id}/trust", s.handleTrust)
 	mux.HandleFunc("POST /api/settings", s.handleSettings)
 	mux.HandleFunc("GET /api/logs.zip", s.handleLogs)
@@ -377,6 +380,61 @@ func (s *Server) handleTestInstrument(w http.ResponseWriter, r *http.Request) {
 
 type trustRequest struct {
 	Fingerprint string `json:"fingerprint"`
+}
+
+// handleDetectParameters dials one instrument and lists what it measures.
+func (s *Server) handleDetectParameters(w http.ResponseWriter, r *http.Request) {
+	var ins model.Instrument
+	if !readJSON(w, r, &ins) {
+		return
+	}
+	ins.SecurityMode = model.SecurityModeSignAndEncrypt
+	if ins.SecurityPolicy == "" {
+		ins.SecurityPolicy = model.SecurityPolicyBasic256Sha256
+	}
+	if ins.ID == "" {
+		ins.ID = newID()
+	}
+	if ins.ExternalDeviceID == "" {
+		ins.ExternalDeviceID = "test-" + ins.ID
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	writeJSON(w, http.StatusOK, device.DetectParameters(ctx, ins, s.pki, s.mgr, s.st, s.log))
+}
+
+type discoverRequest struct {
+	// Extra addresses to probe in addition to the local networks.
+	Extra []string `json:"extra"`
+}
+
+// handleDiscover searches the local network for OPC UA instruments.
+func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
+	var req discoverRequest
+	if r.ContentLength > 0 && !readJSON(w, r, &req) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+
+	found, err := discovery.Scan(ctx, discovery.Options{Extra: req.Extra})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	known := map[string]bool{}
+	for _, ins := range s.cfg.Get().Instruments {
+		known[strings.TrimRight(ins.EndpointURL, "/")] = true
+	}
+	type item struct {
+		discovery.Found
+		AlreadyAdded bool `json:"already_added"`
+	}
+	items := make([]item, 0, len(found))
+	for _, f := range found {
+		items = append(items, item{Found: f, AlreadyAdded: known[f.EndpointURL]})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "servers": items})
 }
 
 func (s *Server) handleTrust(w http.ResponseWriter, r *http.Request) {
