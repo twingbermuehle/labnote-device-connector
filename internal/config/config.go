@@ -17,6 +17,9 @@ import (
 	"github.com/labnote/labnote-device-connector/internal/model"
 )
 
+// DefaultIngestPort is the lab-network port instruments push their reports to.
+const DefaultIngestPort = 8421
+
 // Config is the persisted connector configuration.
 type Config struct {
 	LabNoteURL    string             `json:"labnote_url"`
@@ -24,7 +27,11 @@ type Config struct {
 	Location      string            `json:"location"`
 	AutoUpdate    bool              `json:"auto_update"`
 	SetupComplete bool              `json:"setup_complete"`
-	Instruments   []model.Instrument `json:"instruments"`
+	// IngestPort and IngestTLS configure the listener that receives reports
+	// pushed by instruments without OPC UA.
+	IngestPort  int  `json:"ingest_port"`
+	IngestTLS   bool `json:"ingest_tls"`
+	Instruments []model.Instrument `json:"instruments"`
 }
 
 // Store is a concurrency-safe, file-backed Config.
@@ -121,6 +128,7 @@ func (c Config) validate() error {
 		}
 	}
 	seen := map[string]bool{}
+	tokens := map[string]bool{}
 	for i := range c.Instruments {
 		ins := &c.Instruments[i]
 		ins.Name = strings.TrimSpace(ins.Name)
@@ -132,6 +140,25 @@ func (c Config) validate() error {
 			return fmt.Errorf("duplicate external_device_id %q", ins.ExternalDeviceID)
 		}
 		seen[ins.ExternalDeviceID] = true
+		if ins.Kind == "" {
+			ins.Kind = model.KindOPCUA
+		}
+		if ins.Kind == model.KindPush {
+			// The instrument connects to us, so there is no endpoint and no
+			// OPC UA security to validate — the token is the credential.
+			ins.IngestToken = strings.TrimSpace(ins.IngestToken)
+			if len(ins.IngestToken) < 24 {
+				return fmt.Errorf("instrument %q: a push instrument needs an ingest token", ins.ExternalDeviceID)
+			}
+			if tokens[ins.IngestToken] {
+				return fmt.Errorf("instrument %q: duplicate ingest token", ins.ExternalDeviceID)
+			}
+			tokens[ins.IngestToken] = true
+			continue
+		}
+		if ins.Kind != model.KindOPCUA {
+			return fmt.Errorf("instrument %q: unknown kind %q", ins.ExternalDeviceID, ins.Kind)
+		}
 		if !strings.HasPrefix(ins.EndpointURL, "opc.tcp://") {
 			return fmt.Errorf("instrument %q: endpoint must start with opc.tcp://", ins.ExternalDeviceID)
 		}
