@@ -57,7 +57,6 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		}
 		if err := s.serve(ctx, cfg); err != nil && ctx.Err() == nil {
 			s.log.Error("push ingest listener stopped", "error", err)
-			s.st.SetDeviceStatusByID("", "", "")
 			select {
 			case <-ctx.Done():
 				return nil
