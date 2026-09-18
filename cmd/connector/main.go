@@ -120,9 +120,6 @@ func run(ctx context.Context, dataDir string, debug bool) error {
 	up := uploader.New(box, clientFor, st, log)
 	upd := updater.New(version, func() bool { return cfgStore.Get().AutoUpdate }, log)
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	mgr.Start(ctx)
 	go up.Run(ctx)
 	go func() {
