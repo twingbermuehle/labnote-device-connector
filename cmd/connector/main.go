@@ -44,13 +44,28 @@ func main() {
 		return
 	}
 
-	if err := run(*dataDir, *debug); err != nil {
+	// When Windows' service manager started us, hand control to it so the
+	// service reports Running and survives the console window closing.
+	handled, err := startService(func(ctx context.Context) error { return run(ctx, *dataDir, *debug) })
+	if handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "connector service failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := run(ctx, *dataDir, *debug); err != nil {
 		fmt.Fprintln(os.Stderr, "connector failed:", err)
 		os.Exit(1)
 	}
 }
 
-func run(dataDir string, debug bool) error {
+func run(ctx context.Context, dataDir string, debug bool) error {
+
 	log, rotator, err := logging.New(filepath.Join(dataDir, "logs"), debug)
 	if err != nil {
 		return fmt.Errorf("open logs: %w", err)
