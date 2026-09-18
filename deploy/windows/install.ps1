@@ -10,7 +10,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$admin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+  [Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $admin) {
+  throw "Run this in an elevated PowerShell (right-click PowerShell > Run as administrator)."
+}
+
 if (-not (Test-Path $Binary)) { throw "Binary not found: $Binary" }
+
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path "$env:ProgramData\LabNoteConnector" | Out-Null
@@ -34,7 +41,16 @@ New-Service -Name $ServiceName `
   -StartupType Automatic | Out-Null
 
 sc.exe failure $ServiceName reset= 86400 actions= restart/10000/restart/30000/restart/60000 | Out-Null
+
 Start-Service $ServiceName
+
+# Confirm it really reached Running instead of silently falling back.
+$svc = Get-Service $ServiceName
+$svc.WaitForStatus("Running", "00:00:30")
+if ($svc.Status -ne "Running") {
+  throw "The service did not start. Check $env:ProgramData\LabNoteConnector\logs\connector.log and the Windows event log."
+}
+
 
 Write-Host ""
 Write-Host "Installed. Finish the setup at http://127.0.0.1:8420"
