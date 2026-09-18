@@ -10,7 +10,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$admin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+  [Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $admin) {
+  throw "Run this in an elevated PowerShell (right-click PowerShell > Run as administrator)."
+}
+
 if (-not (Test-Path $Binary)) { throw "Binary not found: $Binary" }
+
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 New-Item -ItemType Directory -Force -Path "$env:ProgramData\LabNoteConnector" | Out-Null
