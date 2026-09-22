@@ -606,5 +606,5 @@ func DetectParameters(ctx context.Context, ins model.Instrument, pki *certs.Stor
 	if len(params) == 0 {
 		msg = "Connected, but the instrument reports no measurable parameters yet. Run one measurement and detect again."
 	}
-	return ParameterReport{OK: true, Message: msg, DeviceName: name, NodeID: node, Parameters: params}
+	return ParameterReport{OK: true, Message: msg, DeviceName: name, NodeID: node, NamespaceURI: namespace, Parameters: params}
 }
