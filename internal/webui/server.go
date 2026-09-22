@@ -150,20 +150,20 @@ func loopbackOnly(next http.Handler) http.Handler {
 }
 
 type stateResponse struct {
-	Version       string             `json:"version"`
-	SetupComplete bool               `json:"setup_complete"`
-	LabNoteURL    string             `json:"labnote_url"`
-	APIKeyStored  bool               `json:"api_key_stored"`
-	Name          string             `json:"name"`
-	Location      string             `json:"location"`
-	AutoUpdate    bool               `json:"auto_update"`
-	Fingerprint   string             `json:"client_certificate_fingerprint"`
-	Instruments   []model.Instrument `json:"instruments"`
-	Ingest        ingestInfo         `json:"ingest"`
-	Profiles      []profileInfo      `json:"profiles"`
-	Runtime       state.Snapshot     `json:"runtime"`
-	Heartbeat     model.Heartbeat    `json:"heartbeat"`
-	Update        updater.Status     `json:"update"`
+	Version       string           `json:"version"`
+	SetupComplete bool             `json:"setup_complete"`
+	LabNoteURL    string           `json:"labnote_url"`
+	APIKeyStored  bool             `json:"api_key_stored"`
+	Name          string           `json:"name"`
+	Location      string           `json:"location"`
+	AutoUpdate    bool             `json:"auto_update"`
+	Fingerprint   string           `json:"client_certificate_fingerprint"`
+	Instruments   []instrumentView `json:"instruments"`
+	Ingest        ingestInfo       `json:"ingest"`
+	Profiles      []profileInfo    `json:"profiles"`
+	Runtime       state.Snapshot   `json:"runtime"`
+	Heartbeat     model.Heartbeat  `json:"heartbeat"`
+	Update        updater.Status   `json:"update"`
 }
 
 // ingestInfo tells the UI how instruments that push their reports should be
@@ -173,6 +173,24 @@ type ingestInfo struct {
 	Scheme      string `json:"scheme"`
 	Host        string `json:"host"`
 	Fingerprint string `json:"certificate_fingerprint,omitempty"`
+}
+
+// instrumentView is an instrument plus a flag telling the setup screen that an
+// OPC UA password is stored. The password itself is never sent to the browser.
+type instrumentView struct {
+	model.Instrument
+	PasswordStored bool `json:"password_stored"`
+}
+
+func instrumentViews(list []model.Instrument) []instrumentView {
+	out := make([]instrumentView, 0, len(list))
+	for _, ins := range list {
+		out = append(out, instrumentView{
+			Instrument:     ins,
+			PasswordStored: ins.Username != "" && keychain.HasInstrumentPassword(ins.ID),
+		})
+	}
+	return out
 }
 
 type profileInfo struct {
@@ -198,7 +216,7 @@ func (s *Server) handleState(w http.ResponseWriter, _ *http.Request) {
 		Location:      cfg.Location,
 		AutoUpdate:    cfg.AutoUpdate,
 		Fingerprint:   fp,
-		Instruments:   cfg.Instruments,
+		Instruments:   instrumentViews(cfg.Instruments),
 		Ingest:        s.ingestInfo(cfg),
 		Profiles:      profs,
 		Runtime:       s.st.Snapshot(),

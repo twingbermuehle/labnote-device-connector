@@ -38,7 +38,6 @@ type Profile struct {
 	MethodKeys     []string `yaml:"method_keys"`
 	OperatorKeys   []string `yaml:"operator_keys"`
 
-
 	// Where the measurement series lives.
 	SeriesXPaths []string `yaml:"series_x_paths"`
 	SeriesYPaths []string `yaml:"series_y_paths"`

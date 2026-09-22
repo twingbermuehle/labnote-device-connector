@@ -8,7 +8,7 @@ import "time"
 // SecurityMode values accepted by the connector. Only SignAndEncrypt is
 // allowed; None and Sign are rejected at configuration time.
 const (
-	SecurityModeSignAndEncrypt = "SignAndEncrypt"
+	SecurityModeSignAndEncrypt   = "SignAndEncrypt"
 	SecurityPolicyBasic256Sha256 = "Basic256Sha256"
 )
 
@@ -38,8 +38,8 @@ const (
 
 // Instrument is one configured instrument.
 type Instrument struct {
-	ID               string `json:"id" yaml:"id"`
-	Kind             string `json:"kind" yaml:"kind"`
+	ID   string `json:"id" yaml:"id"`
+	Kind string `json:"kind" yaml:"kind"`
 	// IngestToken authenticates a push instrument's reports. Only used when
 	// Kind is KindPush.
 	IngestToken      string `json:"ingest_token" yaml:"ingest_token"`
@@ -50,20 +50,20 @@ type Instrument struct {
 	// the connector logs in with username/password (the password lives in the
 	// OS credential store, never in this file). When empty it logs in with its
 	// client certificate.
-	Username         string `json:"opcua_username" yaml:"opcua_username"`
-	SecurityPolicy   string `json:"security_policy" yaml:"security_policy"`
-	SecurityMode     string `json:"security_mode" yaml:"security_mode"`
-	Vendor           string `json:"vendor" yaml:"vendor"`
-	Model            string `json:"model" yaml:"model"`
-	DeviceType       string `json:"device_type" yaml:"device_type"`
-	LADSNodeID       string `json:"lads_node_id" yaml:"lads_node_id"`
-	Profile          string `json:"profile" yaml:"profile"`
+	Username       string `json:"opcua_username" yaml:"opcua_username"`
+	SecurityPolicy string `json:"security_policy" yaml:"security_policy"`
+	SecurityMode   string `json:"security_mode" yaml:"security_mode"`
+	Vendor         string `json:"vendor" yaml:"vendor"`
+	Model          string `json:"model" yaml:"model"`
+	DeviceType     string `json:"device_type" yaml:"device_type"`
+	LADSNodeID     string `json:"lads_node_id" yaml:"lads_node_id"`
+	Profile        string `json:"profile" yaml:"profile"`
 	// Parameters are the measurable quantities detected on the instrument.
 	// Only enabled ones are sent to LabNote; an empty list means "send what
 	// the mapping profile finds", which is the behaviour of older configs.
-	Parameters       []Parameter `json:"parameters,omitempty" yaml:"parameters,omitempty"`
-	DefaultUnitX     string `json:"default_unit_x" yaml:"default_unit_x"`
-	DefaultUnitY     string `json:"default_unit_y" yaml:"default_unit_y"`
+	Parameters   []Parameter `json:"parameters,omitempty" yaml:"parameters,omitempty"`
+	DefaultUnitX string      `json:"default_unit_x" yaml:"default_unit_x"`
+	DefaultUnitY string      `json:"default_unit_y" yaml:"default_unit_y"`
 
 	// ServerCertSHA256 is the pinned server certificate fingerprint (TOFU).
 	// Empty means "not yet pinned" and the first connect requires an explicit

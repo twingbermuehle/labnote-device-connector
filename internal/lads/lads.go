@@ -107,7 +107,6 @@ func (b *Browser) Devices(ctx context.Context) ([]Device, error) {
 	return out, nil
 }
 
-
 // ResultSetNodes returns every ResultSet node below the given device node, so
 // the supervisor can subscribe to their result state variables.
 func (b *Browser) ResultSetNodes(ctx context.Context, deviceNodeID string) ([]*ua.NodeID, error) {
@@ -298,8 +297,6 @@ func keyValues(v *ua.Variant) []*ua.KeyValuePair {
 	}
 	return out
 }
-
-
 
 // Results lists the result objects currently held in a ResultSet.
 func (b *Browser) Results(ctx context.Context, resultSet *ua.NodeID) ([]*ua.NodeID, error) {
