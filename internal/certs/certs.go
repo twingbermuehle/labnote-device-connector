@@ -236,6 +236,21 @@ func FingerprintDER(der []byte) string {
 	return b.String()
 }
 
+// NotAfterDER returns the expiry of a DER certificate, nil when unreadable.
+// Knowing this lets a planned renewal be told apart from an unexpected
+// certificate change, which otherwise looks identical to a device swap.
+func NotAfterDER(der []byte) *time.Time {
+	if len(der) == 0 {
+		return nil
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil
+	}
+	t := cert.NotAfter.UTC()
+	return &t
+}
+
 // SameFingerprint compares two fingerprints case- and separator-insensitively.
 func SameFingerprint(a, b string) bool {
 	norm := func(s string) string {
