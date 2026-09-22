@@ -128,7 +128,17 @@ func (s *Set) add(filename string, raw []byte) error {
 		p.OperatorKeys = []string{"Operator", "User", "UserId"}
 	}
 	if len(p.FinishedStates) == 0 {
-		p.FinishedStates = []string{"Completed", "Finished", "Stopped", "Aborted"}
+		// The companion specification leaves the wording of the result state
+		// machine to the vendor, so every spelling seen in the field is
+		// accepted here.
+		p.FinishedStates = []string{
+			"Completed", "Complete", "CompleteState", "Finished", "Finish",
+			"Stopped", "StoppedState", "Aborted", "AbortedState", "Abort",
+			"Done", "Ended", "Failed", "Error", "Succeeded", "Success",
+		}
+	}
+	if len(p.AmbiguousStates) == 0 {
+		p.AmbiguousStates = []string{"Ready", "Idle", "Stopping", "Standby", "Waiting"}
 	}
 	s.profiles[p.ID] = p
 	return nil
