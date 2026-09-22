@@ -336,12 +336,22 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 		want = ua.UserTokenTypeUserName
 		login = "username and password"
 	}
-	ep := selectSecureEndpoint(endpoints, s.ins.SecurityPolicy, want)
+	ep := selectSecureEndpoint(endpoints, s.ins.SecurityPolicy, want, s.ins.AllowSignOnly)
 	if ep == nil {
+		policy := s.ins.SecurityPolicy
+		if policy == "" || policy == model.SecurityPolicyAuto {
+			policy = "encrypted"
+		}
+		hint := ""
+		if !s.ins.AllowSignOnly && hasSignOnly(endpoints, want) {
+			hint = " The instrument only offers a signed (unencrypted) connection; allow that for this instrument in the setup screen if your policy permits it."
+		}
 		return nil, fmt.Errorf(
-			"instrument offers no %s / SignAndEncrypt endpoint that accepts %s — unencrypted connections are refused",
-			s.ins.SecurityPolicy, login)
+			"instrument offers no %s endpoint that accepts %s — insecure connections are refused.%s",
+			policy, login, hint)
 	}
+	s.st.SetSecurity(s.ins, policyName(ep.SecurityPolicyURI), modeName(ep.SecurityMode), certs.NotAfterDER(ep.ServerCertificate))
+
 
 	fingerprint := certs.FingerprintDER(ep.ServerCertificate)
 	pinned := s.trust.Pinned(s.ins.ID)
