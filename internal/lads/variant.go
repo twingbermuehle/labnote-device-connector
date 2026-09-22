@@ -150,10 +150,22 @@ func EUSymbolFrom(eu *ua.EUInformation) string {
 		return ""
 	}
 	if eu.DisplayName != nil && strings.TrimSpace(eu.DisplayName.Text) != "" {
-		return strings.TrimSpace(eu.DisplayName.Text)
+		return normaliseUnit(strings.TrimSpace(eu.DisplayName.Text))
+	}
+	// Instruments are allowed to send only the UNECE unit code.
+	if sym := UnitFromUnitID(eu.UnitID); sym != "" {
+		return sym
 	}
 	if eu.Description != nil {
-		return strings.TrimSpace(eu.Description.Text)
+		return normaliseUnit(strings.TrimSpace(eu.Description.Text))
 	}
 	return ""
+}
+
+// normaliseUnit maps well-known vendor spellings onto the symbol LabNote shows.
+func normaliseUnit(s string) string {
+	if sym, ok := AbsorbanceUnits[strings.ToUpper(s)]; ok {
+		return sym
+	}
+	return s
 }
