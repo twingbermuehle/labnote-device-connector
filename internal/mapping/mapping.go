@@ -141,13 +141,112 @@ func Build(
 }
 
 // IsFinished reports whether a state value counts as finished for this profile.
+// State machine state names often carry a "...State" suffix and may arrive
+// namespace-qualified ("2:CompleteState"), so both are normalised away.
 func IsFinished(state string, prof profiles.Profile) bool {
+	state = normaliseState(state)
+	if state == "" {
+		return false
+	}
 	for _, s := range prof.FinishedStates {
-		if equalFold(state, s) {
+		if equalFold(state, normaliseState(s)) {
 			return true
 		}
 	}
 	return false
+}
+
+// IsAmbiguous reports a state that means "not running" but does not by itself
+// prove a result exists (Ready, Idle, ...). The caller treats it as finished
+// only together with a stop timestamp.
+func IsAmbiguous(state string, prof profiles.Profile) bool {
+	state = normaliseState(state)
+	if state == "" {
+		return false
+	}
+	for _, s := range prof.AmbiguousStates {
+		if equalFold(state, normaliseState(s)) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsFinishedNumber matches a state machine's numeric state, used by
+// instruments whose state text is not human readable.
+func IsFinishedNumber(number int, prof profiles.Profile) bool {
+	for _, n := range prof.FinishedStateNumbers {
+		if n == number {
+			return true
+		}
+	}
+	return false
+}
+
+func normaliseState(s string) string {
+	s = strings.TrimSpace(s)
+	if i := strings.LastIndex(s, ":"); i >= 0 {
+		s = s[i+1:]
+	}
+	s = strings.TrimSpace(s)
+	if len(s) > len("State") && strings.EqualFold(s[len(s)-len("State"):], "State") {
+		s = s[:len(s)-len("State")]
+	}
+	return s
+}
+
+// measurementTime returns the instrument's own measurement time and whether it
+// had to be estimated from the connector's clock.
+func measurementTime(ctx context.Context, b *lads.Browser, node *ua.NodeID) (time.Time, bool) {
+	if ts, ok := b.StoppedTime(ctx, node); ok {
+		return ts, false
+	}
+	if ts := readTimestamp(ctx, b, node); !ts.IsZero() {
+		return ts, false
+	}
+	if dv, err := b.SourceTimestamp(ctx, node); err == nil && dv != nil && !dv.SourceTimestamp.IsZero() {
+		return dv.SourceTimestamp.UTC(), false
+	}
+	return time.Now().UTC(), true
+}
+
+// resultID builds the idempotency key. It never mixes in the connector's own
+// clock: an estimated time would make the same result look new on every read.
+func resultID(ctx context.Context, b *lads.Browser, ins model.Instrument, node *ua.NodeID, measuredAt time.Time, estimated bool) string {
+	// Prefer an identifier the instrument itself assigns to the run.
+	if own := b.ReadStringPath(ctx, node, []string{
+		"Properties/ResultId", "ResultId", "Properties/RunId", "RunId", "Identifier",
+	}); own != "" {
+		return fmt.Sprintf("%s:%s", ins.ExternalDeviceID, own)
+	}
+	if estimated {
+		// Instruments that reuse one mutable result node and report no time at
+		// all cannot be told apart run-by-run; the node id keeps repeats out.
+		return node.String()
+	}
+	return fmt.Sprintf("%s@%s", node.String(), measuredAt.UTC().Format(time.RFC3339Nano))
+}
+
+// maxPoints resolves the configured curve cap.
+func maxPoints(ins model.Instrument) int {
+	if ins.MaxPoints > 0 {
+		return ins.MaxPoints
+	}
+	return model.DefaultMaxPoints
+}
+
+// downsample evenly reduces a curve to at most max points, always keeping the
+// first and last sample so the time axis still spans the whole run.
+func downsample(points []model.Point, max int) []model.Point {
+	if max <= 0 || len(points) <= max {
+		return points
+	}
+	out := make([]model.Point, 0, max)
+	step := float64(len(points)-1) / float64(max-1)
+	for i := 0; i < max-1; i++ {
+		out = append(out, points[int(float64(i)*step)])
+	}
+	return append(out, points[len(points)-1])
 }
 
 func readTimestamp(ctx context.Context, b *lads.Browser, node *ua.NodeID) time.Time {
