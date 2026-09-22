@@ -86,6 +86,8 @@ function renderDiscovered(servers) {
 // --- parameters ----------------------------------------------------------
 
 let detectedParams = [];
+// Namespace the detected device node belongs to; saved with the instrument.
+let detectedNamespace = "";
 
 function renderParams(params) {
   detectedParams = params || [];
