@@ -220,38 +220,46 @@ func (s *Supervisor) session(ctx context.Context) error {
 			if n.Error != nil {
 				return fmt.Errorf("subscription error: %w", n.Error)
 			}
-			if _, ok := n.Value.(*ua.DataChangeNotification); !ok {
-				continue
+			// Data changes and events both mean "something happened on the
+			// instrument". Some devices only report completion as an event, so
+			// both kinds trigger the same rescan.
+			switch n.Value.(type) {
+			case *ua.DataChangeNotification, *ua.EventNotificationList:
+				rescan()
 			}
-			rescan()
 		}
 	}
 }
 
 // scan walks a ResultSet and forwards every finished result. A result counts as
-// finished when its state variable says so, or - for servers without a result
-// state machine - when it carries a Stopped timestamp.
-func (s *Supervisor) scan(ctx context.Context, b *lads.Browser, resultSet *ua.NodeID) {
-	results, err := b.Results(ctx, resultSet)
+// finished when its state says so, or - for servers without a result state
+// machine - when it carries a Stopped timestamp. A state that only means "not
+// running" (Ready, Idle) counts only together with a stop timestamp, so an
+// empty result slot is never uploaded as a measurement.
+func (s *Supervisor) scan(ctx context.Context, b *lads.Browser, rs lads.ResultSetRef) {
+	results, err := b.Results(ctx, rs.Node)
 	if err != nil {
 		return
 	}
 	for _, res := range results {
-		if stateNode, err := b.StateVariable(ctx, res); err == nil {
-			dv, err := b.SourceTimestamp(ctx, stateNode)
-			if err == nil && dv != nil && mapping.IsFinished(lads.VariantToString(dv.Value), s.profile) {
-				s.forward(ctx, b, res)
-			}
+		_, stopped := b.StoppedTime(ctx, res)
+		text, number, ok := b.ResultState(ctx, res)
+		switch {
+		case ok && mapping.IsFinished(text, s.profile):
+		case ok && mapping.IsFinishedNumber(number, s.profile):
+		case ok && stopped && mapping.IsAmbiguous(text, s.profile):
+		case !ok && stopped:
+			// No readable state machine at all: the stop timestamp is the only
+			// completion signal the companion specification guarantees.
+		default:
 			continue
 		}
-		if _, ok := b.StoppedTime(ctx, res); ok {
-			s.forward(ctx, b, res)
-		}
+		s.forward(ctx, b, res, rs.FunctionalUnit)
 	}
 }
 
-func (s *Supervisor) forward(ctx context.Context, b *lads.Browser, resultNode *ua.NodeID) {
-	rec, err := mapping.Build(ctx, b, s.ins, s.profile, resultNode)
+func (s *Supervisor) forward(ctx context.Context, b *lads.Browser, resultNode *ua.NodeID, functionalUnit string) {
+	rec, err := mapping.Build(ctx, b, s.ins, s.profile, resultNode, mapping.WithFunctionalUnit(functionalUnit))
 	if err != nil {
 		s.log.Warn("map result failed", "error", err)
 		return
