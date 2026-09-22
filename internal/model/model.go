@@ -82,7 +82,17 @@ type Instrument struct {
 	Model          string `json:"model" yaml:"model"`
 	DeviceType     string `json:"device_type" yaml:"device_type"`
 	LADSNodeID     string `json:"lads_node_id" yaml:"lads_node_id"`
-	Profile        string `json:"profile" yaml:"profile"`
+	// LADSNamespaceURI is the namespace the saved device node belongs to.
+	// Namespace indices are not stable across instrument restarts, so the node
+	// id is re-resolved against this URI on every connect.
+	LADSNamespaceURI string `json:"lads_namespace_uri,omitempty" yaml:"lads_namespace_uri,omitempty"`
+	// AllowSignOnly lets the connector fall back to a signed-but-unencrypted
+	// session when the instrument offers nothing stronger. Off by default.
+	AllowSignOnly bool `json:"allow_sign_only" yaml:"allow_sign_only"`
+	// MaxPoints caps the number of curve points sent per result; larger curves
+	// are evenly down-sampled. 0 uses DefaultMaxPoints.
+	MaxPoints int    `json:"max_points,omitempty" yaml:"max_points,omitempty"`
+	Profile   string `json:"profile" yaml:"profile"`
 	// Parameters are the measurable quantities detected on the instrument.
 	// Only enabled ones are sent to LabNote; an empty list means "send what
 	// the mapping profile finds", which is the behaviour of older configs.
