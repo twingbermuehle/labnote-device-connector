@@ -112,6 +112,15 @@ func (s *Set) add(filename string, raw []byte) error {
 	if p.ID == "" {
 		p.ID = strings.TrimSuffix(filename, ".yaml")
 	}
+	p.ApplyDefaults()
+	s.profiles[p.ID] = p
+	return nil
+}
+
+// ApplyDefaults fills in the fallbacks a profile file may omit. Every default
+// covers a spelling or layout seen on real instruments, so a profile-less
+// generic LADS device still works.
+func (p *Profile) ApplyDefaults() {
 	if len(p.SeriesContainerPaths) == 0 {
 		p.SeriesContainerPaths = []string{"VariableSet", "Variables", "Results"}
 	}
