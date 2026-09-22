@@ -304,17 +304,33 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 	// advertises: instruments frequently advertise an internal hostname that
 	// does not resolve from the connector host. The security settings still
 	// come from the discovered endpoint.
-	client, err := opcua.NewClient(s.ins.EndpointURL,
-		opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeCertificate),
+	opts := []opcua.Option{
 		opcua.CertificateFile(s.pki.CertPath()),
 		opcua.PrivateKeyFile(s.pki.KeyPath()),
-		opcua.AuthCertificate(clientDER),
-		// Certificate login signs the server nonce with this key; without it
-		// the server rejects the session with BadSecurityChecksFailed.
-		opcua.AuthPrivateKey(clientKey),
 		opcua.AutoReconnect(false), // the Run loop owns reconnection
-		opcua.RequestTimeout(20*time.Second),
-	)
+		opcua.RequestTimeout(20 * time.Second),
+	}
+	if user := strings.TrimSpace(s.ins.Username); user != "" {
+		// The instrument expects a user account. The channel stays
+		// Basic256Sha256 / SignAndEncrypt; only the login differs.
+		pass := s.password
+		if pass == "" {
+			pass = keychain.InstrumentPassword(s.ins.ID)
+		}
+		opts = append(opts,
+			opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeUserName),
+			opcua.AuthUsername(user, pass),
+		)
+	} else {
+		opts = append(opts,
+			opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeCertificate),
+			opcua.AuthCertificate(clientDER),
+			// Certificate login signs the server nonce with this key; without
+			// it the server rejects the session with BadSecurityChecksFailed.
+			opcua.AuthPrivateKey(clientKey),
+		)
+	}
+	client, err := opcua.NewClient(s.ins.EndpointURL, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("create client: %w", err)
 	}
