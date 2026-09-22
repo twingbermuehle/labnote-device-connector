@@ -107,23 +107,30 @@ func (b *Browser) Devices(ctx context.Context) ([]Device, error) {
 	return out, nil
 }
 
-// ResultSetNodes returns every ResultSet node below the given device node, so
+// ResultSetRef is one ResultSet together with the functional unit it belongs
+// to, so results of a multi-part device stay distinguishable.
+type ResultSetRef struct {
+	Node           *ua.NodeID
+	FunctionalUnit string
+}
+
+// ResultSetNodes returns every ResultSet below the given device node, so
 // the supervisor can subscribe to their result state variables.
-func (b *Browser) ResultSetNodes(ctx context.Context, deviceNodeID string) ([]*ua.NodeID, error) {
+func (b *Browser) ResultSetNodes(ctx context.Context, deviceNodeID string) ([]ResultSetRef, error) {
 	nid, err := ua.ParseNodeID(deviceNodeID)
 	if err != nil {
 		return nil, err
 	}
 	device := b.c.Node(nid)
 
-	var out []*ua.NodeID
+	var out []ResultSetRef
 	seen := map[string]bool{}
-	add := func(n *ua.NodeID) {
+	add := func(n *ua.NodeID, unit string) {
 		if n == nil || seen[n.String()] {
 			return
 		}
 		seen[n.String()] = true
-		out = append(out, n)
+		out = append(out, ResultSetRef{Node: n, FunctionalUnit: unit})
 	}
 
 	fus, err := b.childByName(ctx, device, BrowseFunctionalUnitSet)
@@ -135,14 +142,89 @@ func (b *Browser) ResultSetNodes(ctx context.Context, deviceNodeID string) ([]*u
 		return nil, err
 	}
 	for _, u := range units {
+		unitName := ""
+		if n, err := u.BrowseName(ctx); err == nil {
+			unitName = n.Name
+		}
 		for _, rs := range b.resultSetsBelowUnit(ctx, u) {
-			add(rs)
+			add(rs, unitName)
 		}
 	}
 	if len(out) == 0 {
 		return nil, errors.New("no ResultSet found below device")
 	}
 	return out, nil
+}
+
+// NamespaceURI returns the namespace URI a node id belongs to, read from the
+// server's NamespaceArray. Empty when it cannot be resolved.
+func (b *Browser) NamespaceURI(ctx context.Context, nodeID string) string {
+	nid, err := ua.ParseNodeID(nodeID)
+	if err != nil {
+		return ""
+	}
+	uris, err := b.namespaceArray(ctx)
+	if err != nil || int(nid.Namespace()) >= len(uris) {
+		return ""
+	}
+	return uris[nid.Namespace()]
+}
+
+// ResolveNodeID re-points a saved node id at the namespace it was saved from.
+//
+// Namespace indices are assigned per server session and are NOT guaranteed to
+// survive an instrument restart. Without this, a restart that reorders the
+// namespace array silently points the connector at a different node.
+func (b *Browser) ResolveNodeID(ctx context.Context, nodeID, namespaceURI string) (string, error) {
+	nid, err := ua.ParseNodeID(nodeID)
+	if err != nil {
+		return "", err
+	}
+	if namespaceURI == "" {
+		return nodeID, nil
+	}
+	uris, err := b.namespaceArray(ctx)
+	if err != nil {
+		return nodeID, nil
+	}
+	want := -1
+	for i, u := range uris {
+		if u == namespaceURI {
+			want = i
+			break
+		}
+	}
+	if want < 0 {
+		return "", fmt.Errorf("instrument no longer exposes namespace %q — re-detect the instrument in the setup screen", namespaceURI)
+	}
+	if uint16(want) == nid.Namespace() {
+		return nodeID, nil
+	}
+	moved := ua.NewStringNodeID(uint16(want), nid.StringID())
+	switch nid.Type() {
+	case ua.NodeIDTypeNumeric, ua.NodeIDTypeTwoByte, ua.NodeIDTypeFourByte:
+		moved = ua.NewNumericNodeID(uint16(want), nid.IntID())
+	case ua.NodeIDTypeGUID:
+		moved = ua.NewStringNodeID(uint16(want), nid.StringID())
+	case ua.NodeIDTypeByteString:
+		moved = ua.NewByteStringNodeID(uint16(want), nid.ByteString())
+	}
+	return moved.String(), nil
+}
+
+func (b *Browser) namespaceArray(ctx context.Context) ([]string, error) {
+	v, err := b.c.Node(ua.NewNumericNodeID(0, id.Server_NamespaceArray)).Value(ctx)
+	if err != nil || v == nil {
+		return nil, errors.New("namespace array unavailable")
+	}
+	switch val := v.Value().(type) {
+	case []string:
+		return val, nil
+	case string:
+		return []string{val}, nil
+	default:
+		return nil, errors.New("unexpected namespace array type")
+	}
 }
 
 // resultSetsBelowUnit collects the ResultSet nodes of one functional unit.
