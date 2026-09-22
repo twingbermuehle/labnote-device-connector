@@ -48,7 +48,7 @@ func (b *Browser) Parameters(ctx context.Context, deviceNodeID string) ([]Parame
 	resultSets, err := b.ResultSetNodes(ctx, deviceNodeID)
 	if err == nil {
 		for _, rs := range resultSets {
-			results, err := b.Results(ctx, rs)
+			results, err := b.Results(ctx, rs.Node)
 			if err != nil {
 				continue
 			}

@@ -32,11 +32,17 @@ function instrumentForm() {
     model: $("insModel").value,
     device_type: $("insType").value,
     lads_node_id: $("insNode").value,
+    // Remembered so the device node can be found again after the instrument
+    // renumbers its address space.
+    lads_namespace_uri: detectedNamespace,
     profile: $("insProfile").value,
     default_unit_x: $("insUnitX").value,
     default_unit_y: $("insUnitY").value,
     security_mode: "SignAndEncrypt",
-    security_policy: "Basic256Sha256",
+    // "auto" uses the strongest encryption the instrument offers instead of
+    // insisting on one policy that some instruments do not implement.
+    security_policy: "auto",
+    allow_sign_only: $("insAllowSign").checked,
   };
 }
 
@@ -80,6 +86,8 @@ function renderDiscovered(servers) {
 // --- parameters ----------------------------------------------------------
 
 let detectedParams = [];
+// Namespace the detected device node belongs to; saved with the instrument.
+let detectedNamespace = "";
 
 function renderParams(params) {
   detectedParams = params || [];
@@ -121,6 +129,8 @@ function fillForm(ins) {
   $("insModel").value = ins.model || "";
   $("insType").value = ins.device_type || "";
   $("insNode").value = ins.lads_node_id || "";
+  detectedNamespace = ins.lads_namespace_uri || "";
+  $("insAllowSign").checked = !!ins.allow_sign_only;
   $("insProfile").value = ins.profile || "generic-lads";
   $("insUnitX").value = ins.default_unit_x || "";
   $("insUnitY").value = ins.default_unit_y || "";
@@ -131,7 +141,7 @@ function showPush(ins) {
   const push = $("insKind").value === "push";
   $("pushBox").hidden = !push;
   // Fields and buttons that only apply to instruments the connector reads.
-  for (const id of ["rowEndpoint", "rowNode", "rowProfile"]) {
+  for (const id of ["rowEndpoint", "rowNode", "rowProfile", "rowSign"]) {
     $(id).hidden = push;
   }
   $("detectParams").hidden = push;
@@ -163,6 +173,31 @@ function renderInstruments(s) {
       <td><span class="pill ${status}">${status}</span></td>
       <td>${live.last_result_at ? new Date(live.last_result_at).toLocaleString() : "—"}</td>
       <td></td>`;
+
+    // Plain-language notes about the live connection: which encryption is in
+    // use, when the instrument certificate expires, and any non-fatal warning.
+    const notes = [];
+    if (live.negotiated_policy) {
+      notes.push(
+        `Connection: ${live.negotiated_mode === "Sign" ? "signed, not encrypted" : "encrypted"} (${live.negotiated_policy})`,
+      );
+    }
+    if (live.server_cert_not_after) {
+      const until = new Date(live.server_cert_not_after);
+      const days = Math.round((until - Date.now()) / 86400000);
+      notes.push(
+        days <= 30
+          ? `Instrument certificate expires in ${days} day(s) — ${until.toLocaleDateString()}`
+          : `Instrument certificate valid until ${until.toLocaleDateString()}`,
+      );
+    }
+    if (live.warning) notes.push(live.warning);
+    if (notes.length) {
+      const note = document.createElement("div");
+      note.className = "note";
+      note.textContent = notes.join(" · ");
+      tr.children[3].append(note);
+    }
 
     const cell = tr.lastElementChild;
     const edit = button("Edit", "secondary", () => fillForm(ins));
@@ -322,6 +357,7 @@ $("detectParams").addEventListener("click", async () => {
     });
     renderParams((report.parameters || []).map((p) => ({ ...p, enabled: !!p.recommended })));
     if (report.lads_node_id && !$("insNode").value) $("insNode").value = report.lads_node_id;
+    if (report.lads_namespace_uri) detectedNamespace = report.lads_namespace_uri;
     hint($("instrumentHint"), report.message, report.ok ? "ok" : "bad");
   } catch (err) {
     hint($("instrumentHint"), err.message, "bad");

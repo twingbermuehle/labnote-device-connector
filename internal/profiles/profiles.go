@@ -51,6 +51,15 @@ type Profile struct {
 	// Values considered "finished" for the result state variable.
 	FinishedStates []string `yaml:"finished_states"`
 
+	// AmbiguousStates are state names that mean "not running" but not
+	// necessarily "a result was produced" (Ready, Idle, ...). They count as
+	// finished only when the result also carries a stop timestamp.
+	AmbiguousStates []string `yaml:"ambiguous_states"`
+
+	// FinishedStateNumbers are state machine numbers considered finished, for
+	// instruments that report CurrentState/Number instead of readable text.
+	FinishedStateNumbers []int `yaml:"finished_state_numbers"`
+
 	DefaultUnitX string `yaml:"default_unit_x"`
 	DefaultUnitY string `yaml:"default_unit_y"`
 }
@@ -103,6 +112,15 @@ func (s *Set) add(filename string, raw []byte) error {
 	if p.ID == "" {
 		p.ID = strings.TrimSuffix(filename, ".yaml")
 	}
+	p.ApplyDefaults()
+	s.profiles[p.ID] = p
+	return nil
+}
+
+// ApplyDefaults fills in the fallbacks a profile file may omit. Every default
+// covers a spelling or layout seen on real instruments, so a profile-less
+// generic LADS device still works.
+func (p *Profile) ApplyDefaults() {
 	if len(p.SeriesContainerPaths) == 0 {
 		p.SeriesContainerPaths = []string{"VariableSet", "Variables", "Results"}
 	}
@@ -119,10 +137,18 @@ func (s *Set) add(filename string, raw []byte) error {
 		p.OperatorKeys = []string{"Operator", "User", "UserId"}
 	}
 	if len(p.FinishedStates) == 0 {
-		p.FinishedStates = []string{"Completed", "Finished", "Stopped", "Aborted"}
+		// The companion specification leaves the wording of the result state
+		// machine to the vendor, so every spelling seen in the field is
+		// accepted here.
+		p.FinishedStates = []string{
+			"Completed", "Complete", "CompleteState", "Finished", "Finish",
+			"Stopped", "StoppedState", "Aborted", "AbortedState", "Abort",
+			"Done", "Ended", "Failed", "Error", "Succeeded", "Success",
+		}
 	}
-	s.profiles[p.ID] = p
-	return nil
+	if len(p.AmbiguousStates) == 0 {
+		p.AmbiguousStates = []string{"Ready", "Idle", "Stopping", "Standby", "Waiting"}
+	}
 }
 
 // Get returns the profile with the given id, falling back to generic-lads.

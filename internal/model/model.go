@@ -5,12 +5,37 @@ package model
 
 import "time"
 
-// SecurityMode values accepted by the connector. Only SignAndEncrypt is
-// allowed; None and Sign are rejected at configuration time.
+// SecurityMode values accepted by the connector. SignAndEncrypt is the default
+// and always preferred; Sign is accepted only when the instrument offers
+// nothing better and the operator opted in. None / anonymous is always refused.
 const (
-	SecurityModeSignAndEncrypt   = "SignAndEncrypt"
-	SecurityPolicyBasic256Sha256 = "Basic256Sha256"
+	SecurityModeSignAndEncrypt = "SignAndEncrypt"
+	SecurityModeSign           = "Sign"
+
+	// Security policies the connector can negotiate, weakest to strongest.
+	SecurityPolicyBasic256Sha256      = "Basic256Sha256"
+	SecurityPolicyAes128Sha256RsaOaep = "Aes128_Sha256_RsaOaep"
+	SecurityPolicyAes256Sha256RsaPss  = "Aes256_Sha256_RsaPss"
+	// SecurityPolicyAuto lets the connector pick the strongest policy the
+	// instrument offers. This is the default for new instruments.
+	SecurityPolicyAuto = "auto"
 )
+
+// SecurityPolicyRank scores the accepted policies; higher is stronger.
+var SecurityPolicyRank = map[string]int{
+	SecurityPolicyBasic256Sha256:      1,
+	SecurityPolicyAes128Sha256RsaOaep: 2,
+	SecurityPolicyAes256Sha256RsaPss:  3,
+}
+
+// AcceptedSecurityPolicy reports whether the connector can use a policy name.
+func AcceptedSecurityPolicy(p string) bool {
+	if p == SecurityPolicyAuto {
+		return true
+	}
+	_, ok := SecurityPolicyRank[p]
+	return ok
+}
 
 // Connection states reported per device.
 const (
@@ -57,7 +82,17 @@ type Instrument struct {
 	Model          string `json:"model" yaml:"model"`
 	DeviceType     string `json:"device_type" yaml:"device_type"`
 	LADSNodeID     string `json:"lads_node_id" yaml:"lads_node_id"`
-	Profile        string `json:"profile" yaml:"profile"`
+	// LADSNamespaceURI is the namespace the saved device node belongs to.
+	// Namespace indices are not stable across instrument restarts, so the node
+	// id is re-resolved against this URI on every connect.
+	LADSNamespaceURI string `json:"lads_namespace_uri,omitempty" yaml:"lads_namespace_uri,omitempty"`
+	// AllowSignOnly lets the connector fall back to a signed-but-unencrypted
+	// session when the instrument offers nothing stronger. Off by default.
+	AllowSignOnly bool `json:"allow_sign_only" yaml:"allow_sign_only"`
+	// MaxPoints caps the number of curve points sent per result; larger curves
+	// are evenly down-sampled. 0 uses DefaultMaxPoints.
+	MaxPoints int    `json:"max_points,omitempty" yaml:"max_points,omitempty"`
+	Profile   string `json:"profile" yaml:"profile"`
 	// Parameters are the measurable quantities detected on the instrument.
 	// Only enabled ones are sent to LabNote; an empty list means "send what
 	// the mapping profile finds", which is the behaviour of older configs.
@@ -107,7 +142,20 @@ type DeviceState struct {
 	LastError        string     `json:"last_error,omitempty"`
 	PendingTrust     bool       `json:"pending_trust"`
 	ServerCertSHA256 string     `json:"server_cert_sha256,omitempty"`
+	// ServerCertNotAfter is the expiry of the pinned instrument certificate,
+	// so a planned renewal can be told apart from an unexpected change.
+	ServerCertNotAfter *time.Time `json:"server_cert_not_after,omitempty"`
+	// NegotiatedPolicy / NegotiatedMode record what the session actually used.
+	NegotiatedPolicy string `json:"negotiated_policy,omitempty"`
+	NegotiatedMode   string `json:"negotiated_mode,omitempty"`
+	// Warning is a non-fatal note, e.g. the instrument refused to watch some
+	// items because it hit its own monitored-item limit.
+	Warning string `json:"warning,omitempty"`
 }
+
+// DefaultMaxPoints caps a single uploaded curve. Larger curves are evenly
+// down-sampled so one huge spectrum cannot stall the upload queue.
+const DefaultMaxPoints = 20000
 
 // Point is one x/y sample of a measurement series.
 type Point struct {

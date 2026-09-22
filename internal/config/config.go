@@ -124,7 +124,7 @@ func (s *Store) write(c Config) error {
 
 // ErrInsecureEndpoint is returned when an instrument does not require
 // SignAndEncrypt. Anonymous / None endpoints are never accepted.
-var ErrInsecureEndpoint = errors.New("instrument must use Basic256Sha256 / SignAndEncrypt; None and anonymous auth are rejected")
+var ErrInsecureEndpoint = errors.New("instrument must use an encrypted (SignAndEncrypt) or at least signed (Sign) session; None and anonymous auth are rejected")
 
 func (c *Config) validate() error {
 	if c.IngestPort == 0 {
@@ -174,14 +174,29 @@ func (c *Config) validate() error {
 		if !strings.HasPrefix(ins.EndpointURL, "opc.tcp://") {
 			return fmt.Errorf("instrument %q: endpoint must start with opc.tcp://", ins.ExternalDeviceID)
 		}
-		if ins.SecurityMode != model.SecurityModeSignAndEncrypt {
+		if ins.SecurityMode == "" {
+			ins.SecurityMode = model.SecurityModeSignAndEncrypt
+		}
+		if ins.SecurityMode == model.SecurityModeSign {
+			// Signed-but-unencrypted needs an explicit opt-in.
+			ins.AllowSignOnly = true
+		}
+		if ins.SecurityMode != model.SecurityModeSignAndEncrypt && ins.SecurityMode != model.SecurityModeSign {
 			return fmt.Errorf("instrument %q: %w", ins.ExternalDeviceID, ErrInsecureEndpoint)
 		}
 		if ins.SecurityPolicy == "" {
-			ins.SecurityPolicy = model.SecurityPolicyBasic256Sha256
+			ins.SecurityPolicy = model.SecurityPolicyAuto
 		}
-		if ins.SecurityPolicy != model.SecurityPolicyBasic256Sha256 {
-			return fmt.Errorf("instrument %q: %w", ins.ExternalDeviceID, ErrInsecureEndpoint)
+		if !model.AcceptedSecurityPolicy(ins.SecurityPolicy) {
+			return fmt.Errorf(
+				"instrument %q: security policy %q is not supported — use auto, %s, %s or %s",
+				ins.ExternalDeviceID, ins.SecurityPolicy,
+				model.SecurityPolicyBasic256Sha256,
+				model.SecurityPolicyAes128Sha256RsaOaep,
+				model.SecurityPolicyAes256Sha256RsaPss)
+		}
+		if ins.MaxPoints < 0 {
+			return fmt.Errorf("instrument %q: max_points must not be negative", ins.ExternalDeviceID)
 		}
 		if ins.Profile == "" {
 			ins.Profile = "generic-lads"

@@ -14,7 +14,27 @@ import (
 
 	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/ua"
+
+	"github.com/labnote/labnote-device-connector/internal/model"
 )
+
+// policyName reduces a security policy URI to its short name.
+func policyName(uri string) string {
+	if i := strings.LastIndex(uri, "#"); i >= 0 {
+		return uri[i+1:]
+	}
+	return uri
+}
+
+// addOnce appends a value if it is not in the list yet.
+func addOnce(list *[]string, v string) {
+	for _, x := range *list {
+		if x == v {
+			return
+		}
+	}
+	*list = append(*list, v)
+}
 
 // Ports probed on every address. 4840 is the registered OPC UA port; the others
 // are the usual alternatives, including the LADS reference server's port.
@@ -26,9 +46,16 @@ type Found struct {
 	Address        string `json:"address"`
 	ServerName     string `json:"server_name,omitempty"`
 	ApplicationURI string `json:"application_uri,omitempty"`
-	// Secure is true when the server offers an encrypted endpoint with
-	// certificate login, which is what the connector requires.
+	// Secure is true when the server offers an encrypted endpoint the
+	// connector supports, with either certificate or user-name login.
 	Secure bool `json:"secure"`
+	// SignOnly is true when the best supported endpoint only signs messages
+	// instead of encrypting them; usable after the explicit opt-in.
+	SignOnly bool `json:"sign_only,omitempty"`
+	// Policies lists the supported encryption policies the server offers.
+	Policies []string `json:"policies,omitempty"`
+	// Logins lists the login types the server accepts ("certificate", "user name").
+	Logins []string `json:"logins,omitempty"`
 	// Note explains a server that answered but cannot be used as configured.
 	Note string `json:"note,omitempty"`
 }
@@ -147,17 +174,45 @@ func Identify(ctx context.Context, addr string) (Found, bool) {
 				f.ApplicationURI = ep.Server.ApplicationURI
 			}
 		}
-		if ep.SecurityMode != ua.MessageSecurityModeSignAndEncrypt {
+		policy := policyName(ep.SecurityPolicyURI)
+		if !model.AcceptedSecurityPolicy(policy) {
 			continue
 		}
+		encrypted := ep.SecurityMode == ua.MessageSecurityModeSignAndEncrypt
+		signed := ep.SecurityMode == ua.MessageSecurityModeSign
+		if !encrypted && !signed {
+			continue
+		}
+		login := false
 		for _, t := range ep.UserIdentityTokens {
-			if t.TokenType == ua.UserTokenTypeCertificate {
-				f.Secure = true
+			switch t.TokenType {
+			case ua.UserTokenTypeCertificate:
+				login = true
+				addOnce(&f.Logins, "certificate")
+			case ua.UserTokenTypeUserName:
+				login = true
+				addOnce(&f.Logins, "user name")
 			}
 		}
+		if !login {
+			continue
+		}
+		addOnce(&f.Policies, policy)
+		if encrypted {
+			f.Secure = true
+		} else {
+			f.SignOnly = true
+		}
 	}
-	if !f.Secure {
-		f.Note = "offers no encrypted endpoint with certificate login — the connector cannot use it as it is configured"
+	if f.Secure {
+		f.SignOnly = false
+	}
+	switch {
+	case f.Secure:
+	case f.SignOnly:
+		f.Note = "only offers a signed, unencrypted connection — tick the signed-connection box on the instrument to use it"
+	default:
+		f.Note = "offers no supported encrypted connection with certificate or user-name login — check the instrument's security settings"
 	}
 	return f, true
 }

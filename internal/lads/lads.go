@@ -33,7 +33,11 @@ const (
 
 // Device is a discovered LADS device.
 type Device struct {
-	NodeID          string   `json:"node_id"`
+	NodeID string `json:"node_id"`
+	// NamespaceURI is the namespace the node id belongs to. It is stored with
+	// the instrument so the node can be found again after the instrument
+	// renumbers its namespaces (which OPC UA explicitly allows).
+	NamespaceURI    string   `json:"namespace_uri,omitempty"`
 	Name            string   `json:"name"`
 	Manufacturer    string   `json:"manufacturer,omitempty"`
 	Model           string   `json:"model,omitempty"`
@@ -79,6 +83,7 @@ func (b *Browser) Devices(ctx context.Context) ([]Device, error) {
 		}
 
 		d := Device{NodeID: child.ID.String(), Name: name.Name}
+		d.NamespaceURI = b.NamespaceURI(ctx, d.NodeID)
 		d.Manufacturer, _ = b.readStringChild(ctx, child, "Manufacturer")
 		d.Model, _ = b.readStringChild(ctx, child, "Model")
 		d.SerialNumber, _ = b.readStringChild(ctx, child, "SerialNumber")
@@ -107,23 +112,30 @@ func (b *Browser) Devices(ctx context.Context) ([]Device, error) {
 	return out, nil
 }
 
-// ResultSetNodes returns every ResultSet node below the given device node, so
+// ResultSetRef is one ResultSet together with the functional unit it belongs
+// to, so results of a multi-part device stay distinguishable.
+type ResultSetRef struct {
+	Node           *ua.NodeID
+	FunctionalUnit string
+}
+
+// ResultSetNodes returns every ResultSet below the given device node, so
 // the supervisor can subscribe to their result state variables.
-func (b *Browser) ResultSetNodes(ctx context.Context, deviceNodeID string) ([]*ua.NodeID, error) {
+func (b *Browser) ResultSetNodes(ctx context.Context, deviceNodeID string) ([]ResultSetRef, error) {
 	nid, err := ua.ParseNodeID(deviceNodeID)
 	if err != nil {
 		return nil, err
 	}
 	device := b.c.Node(nid)
 
-	var out []*ua.NodeID
+	var out []ResultSetRef
 	seen := map[string]bool{}
-	add := func(n *ua.NodeID) {
+	add := func(n *ua.NodeID, unit string) {
 		if n == nil || seen[n.String()] {
 			return
 		}
 		seen[n.String()] = true
-		out = append(out, n)
+		out = append(out, ResultSetRef{Node: n, FunctionalUnit: unit})
 	}
 
 	fus, err := b.childByName(ctx, device, BrowseFunctionalUnitSet)
@@ -135,14 +147,89 @@ func (b *Browser) ResultSetNodes(ctx context.Context, deviceNodeID string) ([]*u
 		return nil, err
 	}
 	for _, u := range units {
+		unitName := ""
+		if n, err := u.BrowseName(ctx); err == nil {
+			unitName = n.Name
+		}
 		for _, rs := range b.resultSetsBelowUnit(ctx, u) {
-			add(rs)
+			add(rs, unitName)
 		}
 	}
 	if len(out) == 0 {
 		return nil, errors.New("no ResultSet found below device")
 	}
 	return out, nil
+}
+
+// NamespaceURI returns the namespace URI a node id belongs to, read from the
+// server's NamespaceArray. Empty when it cannot be resolved.
+func (b *Browser) NamespaceURI(ctx context.Context, nodeID string) string {
+	nid, err := ua.ParseNodeID(nodeID)
+	if err != nil {
+		return ""
+	}
+	uris, err := b.namespaceArray(ctx)
+	if err != nil || int(nid.Namespace()) >= len(uris) {
+		return ""
+	}
+	return uris[nid.Namespace()]
+}
+
+// ResolveNodeID re-points a saved node id at the namespace it was saved from.
+//
+// Namespace indices are assigned per server session and are NOT guaranteed to
+// survive an instrument restart. Without this, a restart that reorders the
+// namespace array silently points the connector at a different node.
+func (b *Browser) ResolveNodeID(ctx context.Context, nodeID, namespaceURI string) (string, error) {
+	nid, err := ua.ParseNodeID(nodeID)
+	if err != nil {
+		return "", err
+	}
+	if namespaceURI == "" {
+		return nodeID, nil
+	}
+	uris, err := b.namespaceArray(ctx)
+	if err != nil {
+		return nodeID, nil
+	}
+	want := -1
+	for i, u := range uris {
+		if u == namespaceURI {
+			want = i
+			break
+		}
+	}
+	if want < 0 {
+		return "", fmt.Errorf("instrument no longer exposes namespace %q — re-detect the instrument in the setup screen", namespaceURI)
+	}
+	if uint16(want) == nid.Namespace() {
+		return nodeID, nil
+	}
+	// Only the namespace index moves; the identifier itself is untouched, which
+	// keeps numeric, string, GUID and opaque identifiers all working.
+	moved, err := ua.ParseNodeID(nodeID)
+	if err != nil {
+		return "", err
+	}
+	if err := moved.SetNamespace(uint16(want)); err != nil {
+		return "", fmt.Errorf("re-map node id to namespace %q: %w", namespaceURI, err)
+	}
+	return moved.String(), nil
+}
+
+func (b *Browser) namespaceArray(ctx context.Context) ([]string, error) {
+	v, err := b.c.Node(ua.NewNumericNodeID(0, id.Server_NamespaceArray)).Value(ctx)
+	if err != nil || v == nil {
+		return nil, errors.New("namespace array unavailable")
+	}
+	switch val := v.Value().(type) {
+	case []string:
+		return val, nil
+	case string:
+		return []string{val}, nil
+	default:
+		return nil, errors.New("unexpected namespace array type")
+	}
 }
 
 // resultSetsBelowUnit collects the ResultSet nodes of one functional unit.
@@ -198,8 +285,13 @@ func (b *Browser) StoppedTime(ctx context.Context, result *ua.NodeID) (time.Time
 
 // ChangeWatchNodes returns the variables worth subscribing to for a ResultSet:
 // its NodeVersion (bumped whenever a result is added) and the Stopped/state
-// variable of every result already present.
-func (b *Browser) ChangeWatchNodes(ctx context.Context, resultSet *ua.NodeID) []*ua.NodeID {
+// variable of the most recent results.
+//
+// limit caps how many result variables are watched. Instruments keep their own
+// monitored-item budget, and an archive with thousands of stored results would
+// otherwise exhaust it and make the subscription fail as a whole. Newer results
+// are kept, since those are the ones that can still change.
+func (b *Browser) ChangeWatchNodes(ctx context.Context, resultSet *ua.NodeID, limit int) []*ua.NodeID {
 	var out []*ua.NodeID
 	if n, err := b.resolvePath(ctx, b.c.Node(resultSet), "NodeVersion"); err == nil {
 		out = append(out, n.ID)
@@ -207,6 +299,9 @@ func (b *Browser) ChangeWatchNodes(ctx context.Context, resultSet *ua.NodeID) []
 	results, err := b.Results(ctx, resultSet)
 	if err != nil {
 		return out
+	}
+	if limit > 0 && len(results) > limit {
+		results = results[len(results)-limit:]
 	}
 	for _, res := range results {
 		if n, err := b.StateVariable(ctx, res); err == nil {
@@ -321,6 +416,37 @@ func (b *Browser) StateVariable(ctx context.Context, result *ua.NodeID) (*ua.Nod
 		}
 	}
 	return nil, errors.New("result has no state variable")
+}
+
+// ResultState reads the result's state as text and, where the instrument
+// exposes it, as the state machine's numeric state.
+//
+// Some servers leave CurrentState empty and only fill CurrentState/Name or
+// CurrentState/Number, so all three are tried before giving up.
+func (b *Browser) ResultState(ctx context.Context, result *ua.NodeID) (text string, number int, ok bool) {
+	for _, base := range []string{"CurrentState", "ResultState/CurrentState", "State/CurrentState"} {
+		if v, err := b.ReadPath(ctx, result, base); err == nil && v != nil {
+			if s := strings.TrimSpace(VariantToString(v)); s != "" {
+				text, ok = s, true
+			}
+		}
+		if text == "" {
+			if v, err := b.ReadPath(ctx, result, base+"/Name"); err == nil && v != nil {
+				if s := strings.TrimSpace(VariantToString(v)); s != "" {
+					text, ok = s, true
+				}
+			}
+		}
+		if v, err := b.ReadPath(ctx, result, base+"/Number"); err == nil && v != nil {
+			if nums, good := VariantToFloats(v); good && len(nums) == 1 {
+				number, ok = int(nums[0]), true
+			}
+		}
+		if ok {
+			return text, number, true
+		}
+	}
+	return "", 0, false
 }
 
 // ReadPath resolves a browse-name chain such as "Properties/SampleId" relative

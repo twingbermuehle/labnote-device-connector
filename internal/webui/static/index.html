@@ -73,6 +73,10 @@
           <label>Model<input id="insModel" placeholder="1260 Infinity II" /></label>
           <label>Device type<input id="insType" placeholder="hplc" /></label>
           <label id="rowNode">LADS device node (leave empty — filled in automatically)<input id="insNode" placeholder="ns=2;i=5001" /></label>
+          <label id="rowSign" class="check">
+            <input id="insAllowSign" type="checkbox" />
+            Allow a signed but unencrypted connection if the instrument offers nothing better
+          </label>
           <label id="rowProfile">Mapping profile<select id="insProfile"></select></label>
           <label>Default unit X<input id="insUnitX" placeholder="min" /></label>
           <label>Default unit Y<input id="insUnitY" placeholder="mAU" /></label>
