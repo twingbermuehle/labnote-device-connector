@@ -419,24 +419,87 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 	return client, nil
 }
 
-// selectSecureEndpoint returns the first endpoint that uses SignAndEncrypt
-// with the requested policy and accepts the wanted user login (certificate or
-// username/password). Unencrypted endpoints are always skipped.
-func selectSecureEndpoint(endpoints []*ua.EndpointDescription, policy string, want ua.UserTokenType) *ua.EndpointDescription {
+// selectSecureEndpoint picks the strongest endpoint the instrument offers that
+// accepts the wanted login. Encryption always beats signing, and a stronger
+// policy beats a weaker one. Endpoints without security are never used, and
+// signed-but-unencrypted ones only when the operator allowed them explicitly.
+//
+// A fixed policy ("Basic256Sha256") restricts the choice to that policy; the
+// default "auto" lets the instrument's best offer win, which is what makes
+// devices that do not implement Basic256Sha256 work at all.
+func selectSecureEndpoint(endpoints []*ua.EndpointDescription, policy string, want ua.UserTokenType, allowSignOnly bool) *ua.EndpointDescription {
+	var best *ua.EndpointDescription
+	bestScore := 0
 	for _, ep := range endpoints {
-		if ep.SecurityMode != ua.MessageSecurityModeSignAndEncrypt {
+		if !acceptsToken(ep, want) {
 			continue
 		}
-		if !strings.HasSuffix(ep.SecurityPolicyURI, "#"+policy) {
+		name := policyName(ep.SecurityPolicyURI)
+		rank, ok := model.SecurityPolicyRank[name]
+		if !ok {
+			continue // None, deprecated Basic128Rsa15/Basic256: refused
+		}
+		if policy != "" && policy != model.SecurityPolicyAuto && name != policy {
 			continue
 		}
-		for _, token := range ep.UserIdentityTokens {
-			if token.TokenType == want {
-				return ep
+		modeScore := 0
+		switch ep.SecurityMode {
+		case ua.MessageSecurityModeSignAndEncrypt:
+			modeScore = 100
+		case ua.MessageSecurityModeSign:
+			if !allowSignOnly {
+				continue
+			}
+			modeScore = 10
+		default:
+			continue
+		}
+		if score := modeScore + rank; score > bestScore {
+			best, bestScore = ep, score
+		}
+	}
+	return best
+}
+
+// hasSignOnly reports whether the only secure option is sign-without-encrypt,
+// so the error message can suggest the opt-in instead of a dead end.
+func hasSignOnly(endpoints []*ua.EndpointDescription, want ua.UserTokenType) bool {
+	for _, ep := range endpoints {
+		if ep.SecurityMode == ua.MessageSecurityModeSign && acceptsToken(ep, want) {
+			if _, ok := model.SecurityPolicyRank[policyName(ep.SecurityPolicyURI)]; ok {
+				return true
 			}
 		}
 	}
-	return nil
+	return false
+}
+
+func acceptsToken(ep *ua.EndpointDescription, want ua.UserTokenType) bool {
+	for _, token := range ep.UserIdentityTokens {
+		if token.TokenType == want {
+			return true
+		}
+	}
+	return false
+}
+
+// policyName reduces a security policy URI to its short name.
+func policyName(uri string) string {
+	if i := strings.LastIndex(uri, "#"); i >= 0 {
+		return uri[i+1:]
+	}
+	return uri
+}
+
+func modeName(m ua.MessageSecurityMode) string {
+	switch m {
+	case ua.MessageSecurityModeSignAndEncrypt:
+		return model.SecurityModeSignAndEncrypt
+	case ua.MessageSecurityModeSign:
+		return model.SecurityModeSign
+	default:
+		return "None"
+	}
 }
 
 // TestConnection browses an instrument once and reports what it found. Used by
