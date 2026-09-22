@@ -149,8 +149,6 @@ func (p *Profile) ApplyDefaults() {
 	if len(p.AmbiguousStates) == 0 {
 		p.AmbiguousStates = []string{"Ready", "Idle", "Stopping", "Standby", "Waiting"}
 	}
-	s.profiles[p.ID] = p
-	return nil
 }
 
 // Get returns the profile with the given id, falling back to generic-lads.
