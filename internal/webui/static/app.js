@@ -165,8 +165,6 @@ function renderDiscovered(servers) {
     const act = document.createElement("td");
     if (srv.already_added) {
       act.textContent = "already added";
-    } else if (srv.usable === false) {
-      act.textContent = "cannot be used";
     } else {
       act.appendChild(button("Use this", "secondary", () => {
         $("insKind").value = "opcua";
@@ -174,8 +172,12 @@ function renderDiscovered(servers) {
         $("insEndpoint").value = srv.endpoint_url;
         setError("insEndpoint", "");
         if (!$("insName").value) $("insName").value = srv.server_name || "";
-        if (srv.user_name_login && !srv.certificate_login) {
+        $("insAllowSign").checked = !srv.secure && !!srv.sign_only;
+        const logins = srv.logins || [];
+        if (logins.includes("user name") && !logins.includes("certificate")) {
           hint($("instrumentHint"), "Address filled in. This instrument asks for a user name and password — enter them, then Test connection.", "ok");
+        } else if (!srv.secure && srv.sign_only) {
+          hint($("instrumentHint"), "Address filled in. This instrument only offers a signed, unencrypted connection, so that option has been ticked for you.", "ok");
         } else {
           hint($("instrumentHint"), "Address filled in. Give it a device ID, then Test connection.", "ok");
         }
