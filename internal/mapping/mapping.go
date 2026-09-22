@@ -52,9 +52,12 @@ func Build(
 	if !okY {
 		ys, unitY, okY = b.FirstNumericArrayBelow(ctx, resultNode, prof.SeriesContainerPaths)
 	}
+	rawPointCount := 0
 	if okY {
 		xs, unitX, okX := b.ReadFloatsPath(ctx, resultNode, prof.SeriesXPaths)
-		r.Points = zip(xs, ys, okX)
+		points := zip(xs, ys, okX)
+		rawPointCount = len(points)
+		r.Points = downsample(points, maxPoints(ins))
 		r.UnitX = firstNonEmpty(unitX, ins.DefaultUnitX, prof.DefaultUnitX)
 		r.UnitY = firstNonEmpty(unitY, ins.DefaultUnitY, prof.DefaultUnitY)
 	}
