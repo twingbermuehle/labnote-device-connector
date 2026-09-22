@@ -67,6 +67,8 @@
           <label>Friendly name<input id="insName" placeholder="HPLC 07" /></label>
           <label>Device ID<input id="insExternal" placeholder="HPLC-07" /></label>
           <label id="rowEndpoint">OPC UA endpoint<input id="insEndpoint" placeholder="opc.tcp://192.168.1.50:4840" /></label>
+          <label id="rowUser">OPC UA user name (leave empty if the instrument needs no user login)<input id="insUser" placeholder="e.g. labnote" autocomplete="off" /></label>
+          <label id="rowPass">OPC UA password<input id="insPass" type="password" placeholder="stored in the operating system credential store" autocomplete="off" /></label>
           <label>Vendor<input id="insVendor" placeholder="agilent" /></label>
           <label>Model<input id="insModel" placeholder="1260 Infinity II" /></label>
           <label>Device type<input id="insType" placeholder="hplc" /></label>
@@ -87,7 +89,7 @@
           <p class="hint">Detected on the instrument. Ticked parameters are sent to LabNote.</p>
           <div id="paramList"></div>
         </div>
-        <p class="hint" id="securityHint">Security is fixed to Basic256Sha256 / SignAndEncrypt with mutual certificates. Unencrypted and anonymous connections are refused.</p>
+        <p class="hint" id="securityHint">The connection is always encrypted (Basic256Sha256 / SignAndEncrypt). Leave the user name empty to log in with the connector certificate, or enter the user name and password the instrument expects.</p>
         <div class="actions">
           <button id="testInstrument" class="secondary">Test connection</button>
           <span id="opcuaActions" style="display:contents">

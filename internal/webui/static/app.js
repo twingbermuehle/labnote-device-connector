@@ -26,6 +26,8 @@ function instrumentForm() {
     name: $("insName").value,
     external_device_id: $("insExternal").value,
     opcua_endpoint_url: $("insEndpoint").value,
+    opcua_username: $("insUser").value,
+    opcua_password: $("insPass").value,
     vendor: $("insVendor").value,
     model: $("insModel").value,
     device_type: $("insType").value,
@@ -110,6 +112,11 @@ function fillForm(ins) {
   $("insName").value = ins.name || "";
   $("insExternal").value = ins.external_device_id || "";
   $("insEndpoint").value = ins.opcua_endpoint_url || "";
+  $("insUser").value = ins.opcua_username || "";
+  $("insPass").value = "";
+  $("insPass").placeholder = ins.password_stored
+    ? "stored — leave blank to keep the current password"
+    : "stored in the operating system credential store";
   $("insVendor").value = ins.vendor || "";
   $("insModel").value = ins.model || "";
   $("insType").value = ins.device_type || "";
@@ -267,6 +274,7 @@ $("saveInstrument").addEventListener("click", async () => {
   hint($("instrumentHint"), "Saving…");
   try {
     await api("/api/instruments", { method: "POST", body: JSON.stringify(instrumentForm()) });
+    $("insPass").value = "";
     hint($("instrumentHint"), "Saved. The connector is establishing the session.", "ok");
     fillForm({});
     refresh();
