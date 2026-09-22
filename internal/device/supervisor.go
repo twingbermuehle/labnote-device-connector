@@ -283,8 +283,47 @@ func (s *Supervisor) forward(ctx context.Context, b *lads.Browser, resultNode *u
 		"has_sample_code", rec.SampleCode != "")
 }
 
-// dial selects a SignAndEncrypt endpoint, verifies the pinned server
-// certificate and opens the session.
+// resolveDevice returns the device node to watch.
+//
+// Saved node ids are re-resolved against the namespace they were saved from:
+// OPC UA namespace indices are per-session and may change when an instrument
+// is restarted or updated, which would otherwise silently point the connector
+// at an unrelated node.
+func (s *Supervisor) resolveDevice(ctx context.Context, browser *lads.Browser) (string, error) {
+	if node := strings.TrimSpace(s.ins.LADSNodeID); node != "" {
+		resolved, err := browser.ResolveNodeID(ctx, node, s.ins.LADSNamespaceURI)
+		if err != nil {
+			return "", err
+		}
+		if resolved != node {
+			s.log.Info("device node re-resolved after namespace change", "from", node, "to", resolved)
+		}
+		return resolved, nil
+	}
+	devices, err := browser.Devices(ctx)
+	if err != nil {
+		return "", fmt.Errorf("discover LADS devices: %w", err)
+	}
+	if len(devices) == 0 {
+		return "", errors.New("instrument exposes no LADS device")
+	}
+	if len(devices) > 1 {
+		// Picking one silently would send another device's measurements under
+		// this instrument's name, so say which one is being used.
+		names := make([]string, 0, len(devices))
+		for _, d := range devices {
+			names = append(names, d.Name)
+		}
+		s.st.SetWarning(s.ins, fmt.Sprintf(
+			"This instrument reports %d devices (%s). Measurements of %q are collected. Choose the right one in the setup screen if this is not it.",
+			len(devices), strings.Join(names, ", "), devices[0].Name))
+	}
+	s.log.Info("device auto-selected", "node_id", devices[0].NodeID, "name", devices[0].Name, "device_count", len(devices))
+	return devices[0].NodeID, nil
+}
+
+// dial selects the strongest secure endpoint the instrument offers, verifies
+// the pinned server certificate and opens the session.
 func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 	endpoints, err := opcua.GetEndpoints(ctx, s.ins.EndpointURL)
 	if err != nil {
