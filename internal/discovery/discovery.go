@@ -26,9 +26,16 @@ type Found struct {
 	Address        string `json:"address"`
 	ServerName     string `json:"server_name,omitempty"`
 	ApplicationURI string `json:"application_uri,omitempty"`
-	// Secure is true when the server offers an encrypted endpoint with
-	// certificate login, which is what the connector requires.
+	// Secure is true when the server offers an encrypted endpoint the
+	// connector supports, with either certificate or user-name login.
 	Secure bool `json:"secure"`
+	// SignOnly is true when the best supported endpoint only signs messages
+	// instead of encrypting them; usable after the explicit opt-in.
+	SignOnly bool `json:"sign_only,omitempty"`
+	// Policies lists the supported encryption policies the server offers.
+	Policies []string `json:"policies,omitempty"`
+	// Logins lists the login types the server accepts ("certificate", "user name").
+	Logins []string `json:"logins,omitempty"`
 	// Note explains a server that answered but cannot be used as configured.
 	Note string `json:"note,omitempty"`
 }
