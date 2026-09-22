@@ -25,18 +25,32 @@ func Build(
 	prof profiles.Profile,
 	resultNode *ua.NodeID,
 ) (model.Result, error) {
-	measuredAt := time.Now().UTC()
-	if ts, ok := b.StoppedTime(ctx, resultNode); ok {
-		measuredAt = ts
-	} else if dv, err := b.SourceTimestamp(ctx, resultNode); err == nil && dv != nil && !dv.SourceTimestamp.IsZero() {
-		measuredAt = dv.SourceTimestamp.UTC()
-	} else if ts := readTimestamp(ctx, b, resultNode); !ts.IsZero() {
-		measuredAt = ts
+	// The measurement time comes from the instrument whenever it reports one.
+	// Only as a last resort is the current time used, and that case is flagged
+	// so LabNote can tell an exact time from an estimate.
+	var (
+		measuredAt time.Time
+		estimated  bool
+	)
+	switch {
+	case func() bool { ts, ok := b.StoppedTime(ctx, resultNode); measuredAt = ts; return ok }():
+	case func() bool { ts := readTimestamp(ctx, b, resultNode); measuredAt = ts; return !ts.IsZero() }():
+	default:
+		if dv, err := b.SourceTimestamp(ctx, resultNode); err == nil && dv != nil && !dv.SourceTimestamp.IsZero() {
+			measuredAt = dv.SourceTimestamp.UTC()
+		} else {
+			measuredAt = time.Now().UTC()
+			estimated = true
+		}
 	}
 
+	// The idempotency key must be derived from device-stable fields only:
+	// a wall-clock fallback would make the same physical result look new on
+	// every read. When the instrument reports no identity of its own, the node
+	// id alone is the key, and the server-side duplicate check does the rest.
 	r := model.Result{
 		ExternalDeviceID: ins.ExternalDeviceID,
-		ExternalResultID: fmt.Sprintf("%s@%s", resultNode.String(), measuredAt.Format(time.RFC3339Nano)),
+		ExternalResultID: resultID(ctx, b, ins, resultNode, measuredAt, estimated),
 		MeasuredAt:       measuredAt,
 		Method:           firstNonEmpty(b.ReadStringPath(ctx, resultNode, prof.MethodPaths), b.ReadPropertyKey(ctx, resultNode, prof.PropertyPaths, prof.MethodKeys)),
 		SampleCode:       firstNonEmpty(b.ReadStringPath(ctx, resultNode, prof.SampleCodePaths), b.ReadPropertyKey(ctx, resultNode, prof.PropertyPaths, prof.SampleCodeKeys)),
