@@ -129,16 +129,9 @@ func (s *Supervisor) session(ctx context.Context) error {
 	s.log.Info("connected", "endpoint", s.ins.EndpointURL)
 
 	browser := lads.NewBrowser(client)
-	deviceNode := s.ins.LADSNodeID
-	if deviceNode == "" {
-		// No device chosen during setup: use the single LADS device the server
-		// exposes, so a one-instrument server needs no node id at all.
-		devices, err := browser.Devices(ctx)
-		if err != nil {
-			return fmt.Errorf("discover LADS devices: %w", err)
-		}
-		deviceNode = devices[0].NodeID
-		s.log.Info("device auto-selected", "node_id", deviceNode, "name", devices[0].Name)
+	deviceNode, err := s.resolveDevice(ctx, browser)
+	if err != nil {
+		return err
 	}
 	resultSets, err := browser.ResultSetNodes(ctx, deviceNode)
 	if err != nil {
@@ -151,8 +144,14 @@ func (s *Supervisor) session(ctx context.Context) error {
 	}
 
 	notifications := make(chan *opcua.PublishNotificationData, 64)
+	// Lifetime must outlast the keep-alive by a wide margin, otherwise a server
+	// that publishes rarely deletes the subscription underneath us.
 	sub, err := client.Subscribe(ctx, &opcua.SubscriptionParameters{
-		Interval: 500 * time.Millisecond,
+		Interval:                   500 * time.Millisecond,
+		MaxNotificationsPerPublish: 1000,
+		LifetimeCount:              2400, // 20 min at 500 ms
+		MaxKeepAliveCount:          20,   // server pings every 10 s
+		Priority:                   0,
 	}, notifications)
 	if err != nil {
 		return fmt.Errorf("create subscription: %w", err)
