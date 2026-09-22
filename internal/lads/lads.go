@@ -33,7 +33,11 @@ const (
 
 // Device is a discovered LADS device.
 type Device struct {
-	NodeID          string   `json:"node_id"`
+	NodeID string `json:"node_id"`
+	// NamespaceURI is the namespace the node id belongs to. It is stored with
+	// the instrument so the node can be found again after the instrument
+	// renumbers its namespaces (which OPC UA explicitly allows).
+	NamespaceURI    string   `json:"namespace_uri,omitempty"`
 	Name            string   `json:"name"`
 	Manufacturer    string   `json:"manufacturer,omitempty"`
 	Model           string   `json:"model,omitempty"`
