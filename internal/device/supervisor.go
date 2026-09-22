@@ -267,11 +267,17 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 		return nil, fmt.Errorf("get endpoints: %w", err)
 	}
 
-	ep := selectSecureEndpoint(endpoints, s.ins.SecurityPolicy)
+	want := ua.UserTokenTypeCertificate
+	login := "certificate login"
+	if strings.TrimSpace(s.ins.Username) != "" {
+		want = ua.UserTokenTypeUserName
+		login = "username and password"
+	}
+	ep := selectSecureEndpoint(endpoints, s.ins.SecurityPolicy, want)
 	if ep == nil {
 		return nil, fmt.Errorf(
-			"instrument offers no %s / SignAndEncrypt endpoint — unencrypted and anonymous connections are refused",
-			s.ins.SecurityPolicy)
+			"instrument offers no %s / SignAndEncrypt endpoint that accepts %s — unencrypted connections are refused",
+			s.ins.SecurityPolicy, login)
 	}
 
 	fingerprint := certs.FingerprintDER(ep.ServerCertificate)
