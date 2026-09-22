@@ -174,6 +174,31 @@ function renderInstruments(s) {
       <td>${live.last_result_at ? new Date(live.last_result_at).toLocaleString() : "—"}</td>
       <td></td>`;
 
+    // Plain-language notes about the live connection: which encryption is in
+    // use, when the instrument certificate expires, and any non-fatal warning.
+    const notes = [];
+    if (live.negotiated_policy) {
+      notes.push(
+        `Connection: ${live.negotiated_mode === "Sign" ? "signed, not encrypted" : "encrypted"} (${live.negotiated_policy})`,
+      );
+    }
+    if (live.server_cert_not_after) {
+      const until = new Date(live.server_cert_not_after);
+      const days = Math.round((until - Date.now()) / 86400000);
+      notes.push(
+        days <= 30
+          ? `Instrument certificate expires in ${days} day(s) — ${until.toLocaleDateString()}`
+          : `Instrument certificate valid until ${until.toLocaleDateString()}`,
+      );
+    }
+    if (live.warning) notes.push(live.warning);
+    if (notes.length) {
+      const note = document.createElement("div");
+      note.className = "note";
+      note.textContent = notes.join(" · ");
+      tr.children[3].append(note);
+    }
+
     const cell = tr.lastElementChild;
     const edit = button("Edit", "secondary", () => fillForm(ins));
     cell.append(edit);
