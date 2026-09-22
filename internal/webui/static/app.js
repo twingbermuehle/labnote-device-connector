@@ -332,6 +332,7 @@ $("detectParams").addEventListener("click", async () => {
     });
     renderParams((report.parameters || []).map((p) => ({ ...p, enabled: !!p.recommended })));
     if (report.lads_node_id && !$("insNode").value) $("insNode").value = report.lads_node_id;
+    if (report.lads_namespace_uri) detectedNamespace = report.lads_namespace_uri;
     hint($("instrumentHint"), report.message, report.ok ? "ok" : "bad");
   } catch (err) {
     hint($("instrumentHint"), err.message, "bad");
