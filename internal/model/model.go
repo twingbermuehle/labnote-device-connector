@@ -142,7 +142,20 @@ type DeviceState struct {
 	LastError        string     `json:"last_error,omitempty"`
 	PendingTrust     bool       `json:"pending_trust"`
 	ServerCertSHA256 string     `json:"server_cert_sha256,omitempty"`
+	// ServerCertNotAfter is the expiry of the pinned instrument certificate,
+	// so a planned renewal can be told apart from an unexpected change.
+	ServerCertNotAfter *time.Time `json:"server_cert_not_after,omitempty"`
+	// NegotiatedPolicy / NegotiatedMode record what the session actually used.
+	NegotiatedPolicy string `json:"negotiated_policy,omitempty"`
+	NegotiatedMode   string `json:"negotiated_mode,omitempty"`
+	// Warning is a non-fatal note, e.g. the instrument refused to watch some
+	// items because it hit its own monitored-item limit.
+	Warning string `json:"warning,omitempty"`
 }
+
+// DefaultMaxPoints caps a single uploaded curve. Larger curves are evenly
+// down-sampled so one huge spectrum cannot stall the upload queue.
+const DefaultMaxPoints = 20000
 
 // Point is one x/y sample of a measurement series.
 type Point struct {
