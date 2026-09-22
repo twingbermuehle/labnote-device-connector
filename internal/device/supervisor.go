@@ -346,10 +346,10 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 	return client, nil
 }
 
-// selectSecureEndpoint returns the first endpoint that both uses
-// SignAndEncrypt with the requested policy and offers certificate-based user
-// authentication. Anonymous-only endpoints are skipped.
-func selectSecureEndpoint(endpoints []*ua.EndpointDescription, policy string) *ua.EndpointDescription {
+// selectSecureEndpoint returns the first endpoint that uses SignAndEncrypt
+// with the requested policy and accepts the wanted user login (certificate or
+// username/password). Unencrypted endpoints are always skipped.
+func selectSecureEndpoint(endpoints []*ua.EndpointDescription, policy string, want ua.UserTokenType) *ua.EndpointDescription {
 	for _, ep := range endpoints {
 		if ep.SecurityMode != ua.MessageSecurityModeSignAndEncrypt {
 			continue
@@ -358,7 +358,7 @@ func selectSecureEndpoint(endpoints []*ua.EndpointDescription, policy string) *u
 			continue
 		}
 		for _, token := range ep.UserIdentityTokens {
-			if token.TokenType == ua.UserTokenTypeCertificate {
+			if token.TokenType == want {
 				return ep
 			}
 		}
