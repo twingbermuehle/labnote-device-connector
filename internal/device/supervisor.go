@@ -561,7 +561,10 @@ type ParameterReport struct {
 	Message    string           `json:"message"`
 	DeviceName string           `json:"device_name,omitempty"`
 	NodeID     string           `json:"lads_node_id,omitempty"`
-	Parameters []lads.Parameter `json:"parameters"`
+	// NamespaceURI is saved with the instrument so the device node survives a
+	// namespace renumbering on the instrument.
+	NamespaceURI string           `json:"lads_namespace_uri,omitempty"`
+	Parameters   []lads.Parameter `json:"parameters"`
 }
 
 // DetectParameters dials the instrument once and lists its measurable
