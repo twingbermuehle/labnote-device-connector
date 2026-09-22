@@ -32,11 +32,17 @@ function instrumentForm() {
     model: $("insModel").value,
     device_type: $("insType").value,
     lads_node_id: $("insNode").value,
+    // Remembered so the device node can be found again after the instrument
+    // renumbers its address space.
+    lads_namespace_uri: detectedNamespace,
     profile: $("insProfile").value,
     default_unit_x: $("insUnitX").value,
     default_unit_y: $("insUnitY").value,
     security_mode: "SignAndEncrypt",
-    security_policy: "Basic256Sha256",
+    // "auto" uses the strongest encryption the instrument offers instead of
+    // insisting on one policy that some instruments do not implement.
+    security_policy: "auto",
+    allow_sign_only: $("insAllowSign").checked,
   };
 }
 
