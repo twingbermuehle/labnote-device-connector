@@ -141,7 +141,7 @@ function showPush(ins) {
   const push = $("insKind").value === "push";
   $("pushBox").hidden = !push;
   // Fields and buttons that only apply to instruments the connector reads.
-  for (const id of ["rowEndpoint", "rowNode", "rowProfile"]) {
+  for (const id of ["rowEndpoint", "rowNode", "rowProfile", "rowSign"]) {
     $(id).hidden = push;
   }
   $("detectParams").hidden = push;
