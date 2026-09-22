@@ -47,6 +47,25 @@ func (s *Store) SetPendingTrust(ins model.Instrument, fingerprint string, pendin
 	d.ServerCertSHA256 = fingerprint
 }
 
+// SetSecurity records what the session actually negotiated and when the
+// pinned instrument certificate expires, so the setup screen can show whether
+// the connection is encrypted or only signed.
+func (s *Store) SetSecurity(ins model.Instrument, policy, mode string, notAfter *time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d := s.device(ins)
+	d.NegotiatedPolicy = policy
+	d.NegotiatedMode = mode
+	d.ServerCertNotAfter = notAfter
+}
+
+// SetWarning records a non-fatal note about an otherwise healthy device.
+func (s *Store) SetWarning(ins model.Instrument, msg string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.device(ins).Warning = msg
+}
+
 // RecordResult stamps the time of the last result received from a device.
 func (s *Store) RecordResult(ins model.Instrument) {
 	s.mu.Lock()
