@@ -6,6 +6,7 @@ import { StatusPill } from "@/components/connector/status";
 import {
   connector,
   devices,
+  deviceChoices,
   discovered,
   parameters,
   profileOptions,
@@ -68,6 +69,12 @@ function Setup() {
                 {d.externalDeviceId}
               </span>
               <StatusPill status={d.status} />
+              {d.security ? (
+                <span className="text-xs text-muted-foreground">
+                  {d.security}
+                  {d.certificateUntil ? ` · certificate valid until ${d.certificateUntil}` : ""}
+                </span>
+              ) : null}
               <span className="ml-auto flex gap-2">
                 {d.status === "error" ? (
                   <Button small>Trust certificate</Button>
@@ -92,6 +99,9 @@ function Setup() {
             <li key={s.endpoint} className="flex flex-wrap items-center gap-3 px-4 py-3">
               <span className="text-sm font-medium">{s.name}</span>
               <span className="font-mono text-[0.7rem] text-muted-foreground">{s.endpoint}</span>
+              {s.note ? (
+                <span className="text-xs text-muted-foreground">{s.note}</span>
+              ) : null}
               <span className="ml-auto">
                 {s.added ? (
                   <span className="text-xs text-muted-foreground">already added</span>
@@ -113,6 +123,8 @@ function Setup() {
           <Field label="Friendly name" value="HPLC 07" />
           <Field label="Device ID" value="HPLC-07" mono />
           <Field label="OPC UA endpoint" value="opc.tcp://192.168.1.50:4840" mono />
+          <Field label="OPC UA user name (empty = certificate login)" value="labnote" />
+          <Field label="OPC UA password" value="•••••••••• stored" mono />
           <Field label="Manufacturer" value="agilent" />
           <Field label="Model" value="1260 Infinity II" />
           <Field label="Instrument type" value="hplc" />
@@ -120,6 +132,28 @@ function Setup() {
           <Field label="Mapping profile" value={profileOptions[0]!.label} />
           <Field label="Default units" value="min / mAU" mono />
         </div>
+        <label className="mt-4 flex items-start gap-3 text-sm">
+          <input type="checkbox" className="mt-0.5 size-4 accent-primary" />
+          Allow a signed but unencrypted connection if the instrument offers nothing better
+        </label>
+        <h3 className="mt-6 text-sm font-semibold">Which device on this instrument?</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Shown when one instrument hosts more than one device, so the right one is reported.
+        </p>
+        <ul className="mt-3 space-y-2">
+          {deviceChoices.map((d, i) => (
+            <li key={d.nodeId} className="flex items-center gap-3 text-sm">
+              <input
+                type="radio"
+                name="device-choice"
+                defaultChecked={i === 0}
+                className="size-4 accent-primary"
+              />
+              <span>{d.label}</span>
+              <span className="font-mono text-[0.7rem] text-muted-foreground">{d.nodeId}</span>
+            </li>
+          ))}
+        </ul>
         <h3 className="mt-6 text-sm font-semibold">Measurable parameters</h3>
         <p className="mt-1 text-xs text-muted-foreground">
           Detected on the instrument. Ticked parameters are sent to LabNote.
@@ -152,8 +186,9 @@ function Setup() {
         </div>
 
         <p className="mt-4 text-xs text-muted-foreground">
-          Connections are always encrypted and signed with certificates on both sides. Instruments
-          that only offer unencrypted or unauthenticated access are refused.
+          The connection uses the strongest encryption the instrument offers (Basic256Sha256,
+          Aes128 or Aes256). Leave the user name empty to log in with the connector certificate.
+          Instruments that only offer unencrypted or unauthenticated access are refused.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button variant="ghost">Test connection</Button>
