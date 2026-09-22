@@ -154,17 +154,45 @@ func Identify(ctx context.Context, addr string) (Found, bool) {
 				f.ApplicationURI = ep.Server.ApplicationURI
 			}
 		}
-		if ep.SecurityMode != ua.MessageSecurityModeSignAndEncrypt {
+		policy := policyName(ep.SecurityPolicyURI)
+		if !model.AcceptedSecurityPolicy(policy) {
 			continue
 		}
+		encrypted := ep.SecurityMode == ua.MessageSecurityModeSignAndEncrypt
+		signed := ep.SecurityMode == ua.MessageSecurityModeSign
+		if !encrypted && !signed {
+			continue
+		}
+		login := false
 		for _, t := range ep.UserIdentityTokens {
-			if t.TokenType == ua.UserTokenTypeCertificate {
-				f.Secure = true
+			switch t.TokenType {
+			case ua.UserTokenTypeCertificate:
+				login = true
+				addOnce(&f.Logins, "certificate")
+			case ua.UserTokenTypeUserName:
+				login = true
+				addOnce(&f.Logins, "user name")
 			}
 		}
+		if !login {
+			continue
+		}
+		addOnce(&f.Policies, policy)
+		if encrypted {
+			f.Secure = true
+		} else {
+			f.SignOnly = true
+		}
 	}
-	if !f.Secure {
-		f.Note = "offers no encrypted endpoint with certificate login — the connector cannot use it as it is configured"
+	if f.Secure {
+		f.SignOnly = false
+	}
+	switch {
+	case f.Secure:
+	case f.SignOnly:
+		f.Note = "only offers a signed, unencrypted connection — tick the signed-connection box on the instrument to use it"
+	default:
+		f.Note = "offers no supported encrypted connection with certificate or user-name login — check the instrument's security settings"
 	}
 	return f, true
 }
