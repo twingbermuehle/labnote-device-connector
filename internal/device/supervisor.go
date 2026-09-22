@@ -352,7 +352,6 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 	}
 	s.st.SetSecurity(s.ins, policyName(ep.SecurityPolicyURI), modeName(ep.SecurityMode), certs.NotAfterDER(ep.ServerCertificate))
 
-
 	fingerprint := certs.FingerprintDER(ep.ServerCertificate)
 	pinned := s.trust.Pinned(s.ins.ID)
 	if pinned == "" {
@@ -557,10 +556,10 @@ var _ Sink = (*outbox.Outbox)(nil)
 
 // ParameterReport is the answer to "what does this instrument measure?".
 type ParameterReport struct {
-	OK         bool             `json:"ok"`
-	Message    string           `json:"message"`
-	DeviceName string           `json:"device_name,omitempty"`
-	NodeID     string           `json:"lads_node_id,omitempty"`
+	OK         bool   `json:"ok"`
+	Message    string `json:"message"`
+	DeviceName string `json:"device_name,omitempty"`
+	NodeID     string `json:"lads_node_id,omitempty"`
 	// NamespaceURI is saved with the instrument so the device node survives a
 	// namespace renumbering on the instrument.
 	NamespaceURI string           `json:"lads_namespace_uri,omitempty"`

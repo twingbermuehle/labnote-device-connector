@@ -13,9 +13,9 @@ const (
 	SecurityModeSign           = "Sign"
 
 	// Security policies the connector can negotiate, weakest to strongest.
-	SecurityPolicyBasic256Sha256        = "Basic256Sha256"
-	SecurityPolicyAes128Sha256RsaOaep   = "Aes128_Sha256_RsaOaep"
-	SecurityPolicyAes256Sha256RsaPss    = "Aes256_Sha256_RsaPss"
+	SecurityPolicyBasic256Sha256      = "Basic256Sha256"
+	SecurityPolicyAes128Sha256RsaOaep = "Aes128_Sha256_RsaOaep"
+	SecurityPolicyAes256Sha256RsaPss  = "Aes256_Sha256_RsaPss"
 	// SecurityPolicyAuto lets the connector pick the strongest policy the
 	// instrument offers. This is the default for new instruments.
 	SecurityPolicyAuto = "auto"
