@@ -91,11 +91,26 @@ func Build(
 		"source_timestamp": measuredAt.Format(time.RFC3339Nano),
 		"nodes":            rawNodes,
 	}
+	if estimated {
+		// The instrument reported no measurement time: say so instead of
+		// letting the receiving end believe this clock reading came from it.
+		r.LADS["measured_at_estimated"] = true
+		r.Summary["measured_at_estimated"] = true
+	}
+	if unit := functionalUnitOf(resultNode, ins); unit != "" {
+		r.LADS["functional_unit"] = unit
+	}
 	if r.Operator != "" {
 		r.Summary["operator"] = r.Operator
 	}
 	if len(r.Points) > 0 {
 		r.Summary["point_count"] = len(r.Points)
+		if rawPointCount > len(r.Points) {
+			r.Summary["point_count_measured"] = rawPointCount
+			r.Summary["downsampled"] = true
+			r.LADS["point_count_measured"] = rawPointCount
+			r.LADS["downsampled"] = true
+		}
 	}
 	// The raw LADS metadata is also mirrored inside summary, as the ingest API
 	// documents, so audit consumers find it in both places.
