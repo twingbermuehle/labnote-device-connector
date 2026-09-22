@@ -16,6 +16,7 @@ import (
 	"github.com/gopcua/opcua/ua"
 
 	"github.com/labnote/labnote-device-connector/internal/certs"
+	"github.com/labnote/labnote-device-connector/internal/keychain"
 	"github.com/labnote/labnote-device-connector/internal/lads"
 	"github.com/labnote/labnote-device-connector/internal/mapping"
 	"github.com/labnote/labnote-device-connector/internal/model"
@@ -46,6 +47,9 @@ type Supervisor struct {
 	st       *state.Store
 	trust    TrustStore
 	log      *slog.Logger
+	// password is an OPC UA user password supplied for a one-shot setup test.
+	// The running supervisor reads it from the OS credential store instead.
+	password string
 
 	mu       sync.Mutex
 	client   *opcua.Client
@@ -377,8 +381,11 @@ type TestReport struct {
 }
 
 // TestConnection is a one-shot dial + browse used during setup.
-func TestConnection(ctx context.Context, ins model.Instrument, pki *certs.Store, trust TrustStore, st *state.Store, log *slog.Logger) TestReport {
+func TestConnection(ctx context.Context, ins model.Instrument, pki *certs.Store, trust TrustStore, st *state.Store, log *slog.Logger, password ...string) TestReport {
 	sup := New(ins, profiles.Profile{}, pki, nopSink{}, st, trust, log)
+	if len(password) > 0 {
+		sup.password = password[0]
+	}
 	client, err := sup.dial(ctx)
 	if err != nil {
 		fp := ""
@@ -427,8 +434,11 @@ type ParameterReport struct {
 
 // DetectParameters dials the instrument once and lists its measurable
 // quantities, so the setup UI can offer them for selection.
-func DetectParameters(ctx context.Context, ins model.Instrument, pki *certs.Store, trust TrustStore, st *state.Store, log *slog.Logger) ParameterReport {
+func DetectParameters(ctx context.Context, ins model.Instrument, pki *certs.Store, trust TrustStore, st *state.Store, log *slog.Logger, password ...string) ParameterReport {
 	sup := New(ins, profiles.Profile{}, pki, nopSink{}, st, trust, log)
+	if len(password) > 0 {
+		sup.password = password[0]
+	}
 	client, err := sup.dial(ctx)
 	if err != nil {
 		return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
