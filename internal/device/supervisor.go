@@ -578,14 +578,22 @@ func DetectParameters(ctx context.Context, ins model.Instrument, pki *certs.Stor
 	defer func() { _ = client.Close(context.WithoutCancel(ctx)) }()
 
 	b := lads.NewBrowser(client)
-	node := ins.LADSNodeID
-	name := ""
+	node := strings.TrimSpace(ins.LADSNodeID)
+	name, namespace := "", ins.LADSNamespaceURI
 	if node == "" {
 		devices, err := b.Devices(ctx)
 		if err != nil {
 			return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
 		}
-		node, name = devices[0].NodeID, devices[0].Name
+		if len(devices) == 0 {
+			return ParameterReport{Message: "The instrument exposes no LADS device.", Parameters: []lads.Parameter{}}
+		}
+		node, name, namespace = devices[0].NodeID, devices[0].Name, devices[0].NamespaceURI
+	} else if resolved, err := b.ResolveNodeID(ctx, node, namespace); err == nil {
+		node = resolved
+	}
+	if namespace == "" {
+		namespace = b.NamespaceURI(ctx, node)
 	}
 	params, err := b.Parameters(ctx, node)
 	if err != nil {
