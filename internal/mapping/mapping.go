@@ -28,21 +28,7 @@ func Build(
 	// The measurement time comes from the instrument whenever it reports one.
 	// Only as a last resort is the current time used, and that case is flagged
 	// so LabNote can tell an exact time from an estimate.
-	var (
-		measuredAt time.Time
-		estimated  bool
-	)
-	switch {
-	case func() bool { ts, ok := b.StoppedTime(ctx, resultNode); measuredAt = ts; return ok }():
-	case func() bool { ts := readTimestamp(ctx, b, resultNode); measuredAt = ts; return !ts.IsZero() }():
-	default:
-		if dv, err := b.SourceTimestamp(ctx, resultNode); err == nil && dv != nil && !dv.SourceTimestamp.IsZero() {
-			measuredAt = dv.SourceTimestamp.UTC()
-		} else {
-			measuredAt = time.Now().UTC()
-			estimated = true
-		}
-	}
+	measuredAt, estimated := measurementTime(ctx, b, resultNode)
 
 	// The idempotency key must be derived from device-stable fields only:
 	// a wall-clock fallback would make the same physical result look new on
