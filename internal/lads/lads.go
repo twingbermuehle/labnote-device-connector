@@ -413,6 +413,37 @@ func (b *Browser) StateVariable(ctx context.Context, result *ua.NodeID) (*ua.Nod
 	return nil, errors.New("result has no state variable")
 }
 
+// ResultState reads the result's state as text and, where the instrument
+// exposes it, as the state machine's numeric state.
+//
+// Some servers leave CurrentState empty and only fill CurrentState/Name or
+// CurrentState/Number, so all three are tried before giving up.
+func (b *Browser) ResultState(ctx context.Context, result *ua.NodeID) (text string, number int, ok bool) {
+	for _, base := range []string{"CurrentState", "ResultState/CurrentState", "State/CurrentState"} {
+		if v, err := b.ReadPath(ctx, result, base); err == nil && v != nil {
+			if s := strings.TrimSpace(VariantToString(v)); s != "" {
+				text, ok = s, true
+			}
+		}
+		if text == "" {
+			if v, err := b.ReadPath(ctx, result, base+"/Name"); err == nil && v != nil {
+				if s := strings.TrimSpace(VariantToString(v)); s != "" {
+					text, ok = s, true
+				}
+			}
+		}
+		if v, err := b.ReadPath(ctx, result, base+"/Number"); err == nil && v != nil {
+			if nums, good := VariantToFloats(v); good && len(nums) == 1 {
+				number, ok = int(nums[0]), true
+			}
+		}
+		if ok {
+			return text, number, true
+		}
+	}
+	return "", 0, false
+}
+
 // ReadPath resolves a browse-name chain such as "Properties/SampleId" relative
 // to base and reads its value.
 func (b *Browser) ReadPath(ctx context.Context, base *ua.NodeID, path string) (*ua.Variant, error) {
