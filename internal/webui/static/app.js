@@ -306,7 +306,6 @@ function showPush(ins) {
   for (const id of ["rowEndpoint", "rowNode", "rowProfile", "rowSign", "rowUser", "rowPass"]) {
     $(id).hidden = push;
   }
-  $("opcuaActions").hidden = push;
   $("detectParams").hidden = push;
   $("paramBox").hidden = push || $("paramBox").hidden;
   if (push) $("rowDevicePick").hidden = true;
