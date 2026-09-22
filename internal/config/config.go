@@ -22,19 +22,19 @@ const DefaultIngestPort = 8421
 
 // Config is the persisted connector configuration.
 type Config struct {
-	LabNoteURL    string             `json:"labnote_url"`
-	Name          string            `json:"name"`
-	Location      string            `json:"location"`
-	AutoUpdate    bool              `json:"auto_update"`
-	SetupComplete bool              `json:"setup_complete"`
+	LabNoteURL    string `json:"labnote_url"`
+	Name          string `json:"name"`
+	Location      string `json:"location"`
+	AutoUpdate    bool   `json:"auto_update"`
+	SetupComplete bool   `json:"setup_complete"`
 	// IngestPort configures the listener that receives reports
 	// pushed by instruments without OPC UA.
 	IngestPort int `json:"ingest_port"`
 	// IngestInsecureHTTP disables TLS on that listener (plain HTTP). TLS is
 	// the default; only use plain HTTP when the instrument cannot be told to
 	// trust the connector's certificate.
-	IngestInsecureHTTP bool `json:"ingest_insecure_http"`
-	Instruments []model.Instrument `json:"instruments"`
+	IngestInsecureHTTP bool               `json:"ingest_insecure_http"`
+	Instruments        []model.Instrument `json:"instruments"`
 }
 
 // Store is a concurrency-safe, file-backed Config.

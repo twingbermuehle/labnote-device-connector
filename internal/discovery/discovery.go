@@ -22,9 +22,9 @@ var DefaultPorts = []int{4840, 4841, 4842, 4843, 26543, 48010, 62541}
 
 // Found is one OPC UA server that answered.
 type Found struct {
-	EndpointURL   string `json:"endpoint_url"`
-	Address       string `json:"address"`
-	ServerName    string `json:"server_name,omitempty"`
+	EndpointURL    string `json:"endpoint_url"`
+	Address        string `json:"address"`
+	ServerName     string `json:"server_name,omitempty"`
 	ApplicationURI string `json:"application_uri,omitempty"`
 	// Secure is true when the server offers an encrypted endpoint with
 	// certificate login, which is what the connector requires.

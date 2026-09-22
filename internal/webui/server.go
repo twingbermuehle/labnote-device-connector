@@ -150,20 +150,20 @@ func loopbackOnly(next http.Handler) http.Handler {
 }
 
 type stateResponse struct {
-	Version       string             `json:"version"`
-	SetupComplete bool               `json:"setup_complete"`
-	LabNoteURL    string             `json:"labnote_url"`
-	APIKeyStored  bool               `json:"api_key_stored"`
-	Name          string             `json:"name"`
-	Location      string             `json:"location"`
-	AutoUpdate    bool               `json:"auto_update"`
-	Fingerprint   string             `json:"client_certificate_fingerprint"`
-	Instruments   []instrumentView   `json:"instruments"`
-	Ingest        ingestInfo         `json:"ingest"`
-	Profiles      []profileInfo      `json:"profiles"`
-	Runtime       state.Snapshot     `json:"runtime"`
-	Heartbeat     model.Heartbeat    `json:"heartbeat"`
-	Update        updater.Status     `json:"update"`
+	Version       string           `json:"version"`
+	SetupComplete bool             `json:"setup_complete"`
+	LabNoteURL    string           `json:"labnote_url"`
+	APIKeyStored  bool             `json:"api_key_stored"`
+	Name          string           `json:"name"`
+	Location      string           `json:"location"`
+	AutoUpdate    bool             `json:"auto_update"`
+	Fingerprint   string           `json:"client_certificate_fingerprint"`
+	Instruments   []instrumentView `json:"instruments"`
+	Ingest        ingestInfo       `json:"ingest"`
+	Profiles      []profileInfo    `json:"profiles"`
+	Runtime       state.Snapshot   `json:"runtime"`
+	Heartbeat     model.Heartbeat  `json:"heartbeat"`
+	Update        updater.Status   `json:"update"`
 }
 
 // ingestInfo tells the UI how instruments that push their reports should be

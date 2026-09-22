@@ -40,20 +40,20 @@ type TrustStore interface {
 
 // Supervisor runs the connect/subscribe/reconnect loop for one instrument.
 type Supervisor struct {
-	ins      model.Instrument
-	profile  profiles.Profile
-	pki      *certs.Store
-	sink     Sink
-	st       *state.Store
-	trust    TrustStore
-	log      *slog.Logger
+	ins     model.Instrument
+	profile profiles.Profile
+	pki     *certs.Store
+	sink    Sink
+	st      *state.Store
+	trust   TrustStore
+	log     *slog.Logger
 	// password is an OPC UA user password supplied for a one-shot setup test.
 	// The running supervisor reads it from the OS credential store instead.
 	password string
 
-	mu       sync.Mutex
-	client   *opcua.Client
-	seen     map[string]bool // external_result_id already forwarded this session
+	mu     sync.Mutex
+	client *opcua.Client
+	seen   map[string]bool // external_result_id already forwarded this session
 }
 
 // New creates a supervisor.
@@ -145,7 +145,6 @@ func (s *Supervisor) session(ctx context.Context) error {
 		return fmt.Errorf("browse LADS model: %w", err)
 	}
 
-
 	// Drain results that already finished while the connector was away.
 	for _, rs := range resultSets {
 		s.scan(ctx, browser, rs)
@@ -236,7 +235,6 @@ func (s *Supervisor) scan(ctx context.Context, b *lads.Browser, resultSet *ua.No
 		}
 	}
 }
-
 
 func (s *Supervisor) forward(ctx context.Context, b *lads.Browser, resultNode *ua.NodeID) {
 	rec, err := mapping.Build(ctx, b, s.ins, s.profile, resultNode)
@@ -373,11 +371,11 @@ func selectSecureEndpoint(endpoints []*ua.EndpointDescription, policy string, wa
 // TestConnection browses an instrument once and reports what it found. Used by
 // the Test connection button in the setup UI.
 type TestReport struct {
-	OK                 bool          `json:"ok"`
-	Message            string        `json:"message"`
-	ServerFingerprint  string        `json:"server_fingerprint,omitempty"`
-	TrustRequired      bool          `json:"trust_required"`
-	Devices            []lads.Device `json:"devices,omitempty"`
+	OK                bool          `json:"ok"`
+	Message           string        `json:"message"`
+	ServerFingerprint string        `json:"server_fingerprint,omitempty"`
+	TrustRequired     bool          `json:"trust_required"`
+	Devices           []lads.Device `json:"devices,omitempty"`
 }
 
 // TestConnection is a one-shot dial + browse used during setup.
