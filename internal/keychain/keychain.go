@@ -64,3 +64,52 @@ func Has() bool {
 	_, err := Get()
 	return err == nil
 }
+
+// --- per-instrument OPC UA user login ------------------------------------
+
+const instrumentService = "labnote-device-connector-opcua"
+
+// instrumentEnv allows containers without a credential store to supply an
+// instrument password as LABNOTE_OPCUA_PASSWORD_<INSTRUMENT_ID>.
+func instrumentEnv(instrumentID string) string {
+	id := strings.ToUpper(strings.NewReplacer("-", "_", " ", "_").Replace(instrumentID))
+	return "LABNOTE_OPCUA_PASSWORD_" + id
+}
+
+// SetInstrumentPassword stores an instrument's OPC UA user password in the OS
+// credential store. An empty password removes it.
+func SetInstrumentPassword(instrumentID, password string) error {
+	if strings.TrimSpace(instrumentID) == "" {
+		return errors.New("instrument id must not be empty")
+	}
+	if password == "" {
+		return DeleteInstrumentPassword(instrumentID)
+	}
+	return keyring.Set(instrumentService, instrumentID, password)
+}
+
+// InstrumentPassword returns the stored OPC UA password, "" when none.
+func InstrumentPassword(instrumentID string) string {
+	if v := os.Getenv(instrumentEnv(instrumentID)); v != "" {
+		return v
+	}
+	v, err := keyring.Get(instrumentService, instrumentID)
+	if err != nil {
+		return ""
+	}
+	return v
+}
+
+// HasInstrumentPassword reports whether a password is stored.
+func HasInstrumentPassword(instrumentID string) bool {
+	return InstrumentPassword(instrumentID) != ""
+}
+
+// DeleteInstrumentPassword removes a stored OPC UA password.
+func DeleteInstrumentPassword(instrumentID string) error {
+	err := keyring.Delete(instrumentService, instrumentID)
+	if errors.Is(err, keyring.ErrNotFound) {
+		return nil
+	}
+	return err
+}

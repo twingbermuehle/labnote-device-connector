@@ -287,11 +287,20 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// instrumentRequest is an instrument plus the OPC UA user password, which is
+// stored in the OS credential store and never written to the config file.
+type instrumentRequest struct {
+	model.Instrument
+	Password string `json:"opcua_password"`
+}
+
 func (s *Server) handleSaveInstrument(w http.ResponseWriter, r *http.Request) {
-	var ins model.Instrument
-	if !readJSON(w, r, &ins) {
+	var req instrumentRequest
+	if !readJSON(w, r, &req) {
 		return
 	}
+	ins := req.Instrument
+	ins.Username = strings.TrimSpace(ins.Username)
 	if ins.Kind == "" {
 		ins.Kind = model.KindOPCUA
 	}
@@ -304,6 +313,15 @@ func (s *Server) handleSaveInstrument(w http.ResponseWriter, r *http.Request) {
 	}
 	if ins.Kind == model.KindPush && len(strings.TrimSpace(ins.IngestToken)) < 24 {
 		ins.IngestToken = newToken()
+	}
+	if ins.Username == "" {
+		// Back to certificate login: drop any stored password.
+		_ = keychain.DeleteInstrumentPassword(ins.ID)
+	} else if req.Password != "" {
+		if err := keychain.SetInstrumentPassword(ins.ID, req.Password); err != nil {
+			writeError(w, http.StatusInternalServerError, "could not store the instrument password in the operating system credential store: "+err.Error())
+			return
+		}
 	}
 
 	if err := s.cfg.Update(func(c *config.Config) error {
@@ -342,15 +360,18 @@ func (s *Server) handleDeleteInstrument(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	_ = keychain.DeleteInstrumentPassword(id)
 	s.mgr.Reconcile()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) handleTestInstrument(w http.ResponseWriter, r *http.Request) {
-	var ins model.Instrument
-	if !readJSON(w, r, &ins) {
+	var req instrumentRequest
+	if !readJSON(w, r, &req) {
 		return
 	}
+	ins := req.Instrument
+	ins.Username = strings.TrimSpace(ins.Username)
 	if ins.Kind == model.KindPush {
 		// Nothing to dial: the instrument connects to us. The check is simply
 		// whether a report has already arrived.
@@ -375,7 +396,7 @@ func (s *Server) handleTestInstrument(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 	defer cancel()
-	writeJSON(w, http.StatusOK, device.TestConnection(ctx, ins, s.pki, s.mgr, s.st, s.log))
+	writeJSON(w, http.StatusOK, device.TestConnection(ctx, ins, s.pki, s.mgr, s.st, s.log, req.Password))
 }
 
 type trustRequest struct {
@@ -384,10 +405,12 @@ type trustRequest struct {
 
 // handleDetectParameters dials one instrument and lists what it measures.
 func (s *Server) handleDetectParameters(w http.ResponseWriter, r *http.Request) {
-	var ins model.Instrument
-	if !readJSON(w, r, &ins) {
+	var req instrumentRequest
+	if !readJSON(w, r, &req) {
 		return
 	}
+	ins := req.Instrument
+	ins.Username = strings.TrimSpace(ins.Username)
 	ins.SecurityMode = model.SecurityModeSignAndEncrypt
 	if ins.SecurityPolicy == "" {
 		ins.SecurityPolicy = model.SecurityPolicyBasic256Sha256
@@ -400,7 +423,7 @@ func (s *Server) handleDetectParameters(w http.ResponseWriter, r *http.Request) 
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	writeJSON(w, http.StatusOK, device.DetectParameters(ctx, ins, s.pki, s.mgr, s.st, s.log))
+	writeJSON(w, http.StatusOK, device.DetectParameters(ctx, ins, s.pki, s.mgr, s.st, s.log, req.Password))
 }
 
 type discoverRequest struct {

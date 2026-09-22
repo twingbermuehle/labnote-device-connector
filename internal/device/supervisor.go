@@ -16,6 +16,7 @@ import (
 	"github.com/gopcua/opcua/ua"
 
 	"github.com/labnote/labnote-device-connector/internal/certs"
+	"github.com/labnote/labnote-device-connector/internal/keychain"
 	"github.com/labnote/labnote-device-connector/internal/lads"
 	"github.com/labnote/labnote-device-connector/internal/mapping"
 	"github.com/labnote/labnote-device-connector/internal/model"
@@ -46,6 +47,9 @@ type Supervisor struct {
 	st       *state.Store
 	trust    TrustStore
 	log      *slog.Logger
+	// password is an OPC UA user password supplied for a one-shot setup test.
+	// The running supervisor reads it from the OS credential store instead.
+	password string
 
 	mu       sync.Mutex
 	client   *opcua.Client
@@ -267,11 +271,17 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 		return nil, fmt.Errorf("get endpoints: %w", err)
 	}
 
-	ep := selectSecureEndpoint(endpoints, s.ins.SecurityPolicy)
+	want := ua.UserTokenTypeCertificate
+	login := "certificate login"
+	if strings.TrimSpace(s.ins.Username) != "" {
+		want = ua.UserTokenTypeUserName
+		login = "username and password"
+	}
+	ep := selectSecureEndpoint(endpoints, s.ins.SecurityPolicy, want)
 	if ep == nil {
 		return nil, fmt.Errorf(
-			"instrument offers no %s / SignAndEncrypt endpoint — unencrypted and anonymous connections are refused",
-			s.ins.SecurityPolicy)
+			"instrument offers no %s / SignAndEncrypt endpoint that accepts %s — unencrypted connections are refused",
+			s.ins.SecurityPolicy, login)
 	}
 
 	fingerprint := certs.FingerprintDER(ep.ServerCertificate)
@@ -304,17 +314,33 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 	// advertises: instruments frequently advertise an internal hostname that
 	// does not resolve from the connector host. The security settings still
 	// come from the discovered endpoint.
-	client, err := opcua.NewClient(s.ins.EndpointURL,
-		opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeCertificate),
+	opts := []opcua.Option{
 		opcua.CertificateFile(s.pki.CertPath()),
 		opcua.PrivateKeyFile(s.pki.KeyPath()),
-		opcua.AuthCertificate(clientDER),
-		// Certificate login signs the server nonce with this key; without it
-		// the server rejects the session with BadSecurityChecksFailed.
-		opcua.AuthPrivateKey(clientKey),
 		opcua.AutoReconnect(false), // the Run loop owns reconnection
-		opcua.RequestTimeout(20*time.Second),
-	)
+		opcua.RequestTimeout(20 * time.Second),
+	}
+	if user := strings.TrimSpace(s.ins.Username); user != "" {
+		// The instrument expects a user account. The channel stays
+		// Basic256Sha256 / SignAndEncrypt; only the login differs.
+		pass := s.password
+		if pass == "" {
+			pass = keychain.InstrumentPassword(s.ins.ID)
+		}
+		opts = append(opts,
+			opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeUserName),
+			opcua.AuthUsername(user, pass),
+		)
+	} else {
+		opts = append(opts,
+			opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeCertificate),
+			opcua.AuthCertificate(clientDER),
+			// Certificate login signs the server nonce with this key; without
+			// it the server rejects the session with BadSecurityChecksFailed.
+			opcua.AuthPrivateKey(clientKey),
+		)
+	}
+	client, err := opcua.NewClient(s.ins.EndpointURL, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("create client: %w", err)
 	}
@@ -324,10 +350,10 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 	return client, nil
 }
 
-// selectSecureEndpoint returns the first endpoint that both uses
-// SignAndEncrypt with the requested policy and offers certificate-based user
-// authentication. Anonymous-only endpoints are skipped.
-func selectSecureEndpoint(endpoints []*ua.EndpointDescription, policy string) *ua.EndpointDescription {
+// selectSecureEndpoint returns the first endpoint that uses SignAndEncrypt
+// with the requested policy and accepts the wanted user login (certificate or
+// username/password). Unencrypted endpoints are always skipped.
+func selectSecureEndpoint(endpoints []*ua.EndpointDescription, policy string, want ua.UserTokenType) *ua.EndpointDescription {
 	for _, ep := range endpoints {
 		if ep.SecurityMode != ua.MessageSecurityModeSignAndEncrypt {
 			continue
@@ -336,7 +362,7 @@ func selectSecureEndpoint(endpoints []*ua.EndpointDescription, policy string) *u
 			continue
 		}
 		for _, token := range ep.UserIdentityTokens {
-			if token.TokenType == ua.UserTokenTypeCertificate {
+			if token.TokenType == want {
 				return ep
 			}
 		}
@@ -355,8 +381,11 @@ type TestReport struct {
 }
 
 // TestConnection is a one-shot dial + browse used during setup.
-func TestConnection(ctx context.Context, ins model.Instrument, pki *certs.Store, trust TrustStore, st *state.Store, log *slog.Logger) TestReport {
+func TestConnection(ctx context.Context, ins model.Instrument, pki *certs.Store, trust TrustStore, st *state.Store, log *slog.Logger, password ...string) TestReport {
 	sup := New(ins, profiles.Profile{}, pki, nopSink{}, st, trust, log)
+	if len(password) > 0 {
+		sup.password = password[0]
+	}
 	client, err := sup.dial(ctx)
 	if err != nil {
 		fp := ""
@@ -405,8 +434,11 @@ type ParameterReport struct {
 
 // DetectParameters dials the instrument once and lists its measurable
 // quantities, so the setup UI can offer them for selection.
-func DetectParameters(ctx context.Context, ins model.Instrument, pki *certs.Store, trust TrustStore, st *state.Store, log *slog.Logger) ParameterReport {
+func DetectParameters(ctx context.Context, ins model.Instrument, pki *certs.Store, trust TrustStore, st *state.Store, log *slog.Logger, password ...string) ParameterReport {
 	sup := New(ins, profiles.Profile{}, pki, nopSink{}, st, trust, log)
+	if len(password) > 0 {
+		sup.password = password[0]
+	}
 	client, err := sup.dial(ctx)
 	if err != nil {
 		return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
