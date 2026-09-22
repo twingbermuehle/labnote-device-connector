@@ -14,17 +14,35 @@ import (
 	"github.com/labnote/labnote-device-connector/internal/profiles"
 )
 
+// Option tunes Build.
+type Option func(*options)
+
+type options struct{ functionalUnit string }
+
+// WithFunctionalUnit records which functional unit of the device produced the
+// result, so results of a multi-part instrument stay distinguishable.
+func WithFunctionalUnit(name string) Option {
+	return func(o *options) { o.functionalUnit = name }
+}
+
 // Build reads the full result and maps it to a model.Result.
 //
-// external_result_id = OPC UA NodeId + result timestamp, which is the
-// idempotency key: replays of the same result are rejected server-side.
+// external_result_id is built from device-stable fields only (the instrument's
+// own result id when it reports one, otherwise node id plus the instrument's
+// stop timestamp). It is the idempotency key: replays of the same result are
+// rejected server-side.
 func Build(
 	ctx context.Context,
 	b *lads.Browser,
 	ins model.Instrument,
 	prof profiles.Profile,
 	resultNode *ua.NodeID,
+	opts ...Option,
 ) (model.Result, error) {
+	var o options
+	for _, fn := range opts {
+		fn(&o)
+	}
 	// The measurement time comes from the instrument whenever it reports one.
 	// Only as a last resort is the current time used, and that case is flagged
 	// so LabNote can tell an exact time from an estimate.
