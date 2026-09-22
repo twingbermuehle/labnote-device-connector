@@ -46,6 +46,11 @@ type Instrument struct {
 	Name             string `json:"name" yaml:"name"`
 	ExternalDeviceID string `json:"external_device_id" yaml:"external_device_id"`
 	EndpointURL      string `json:"opcua_endpoint_url" yaml:"opcua_endpoint_url"`
+	// Username is the OPC UA user account the instrument expects. When set,
+	// the connector logs in with username/password (the password lives in the
+	// OS credential store, never in this file). When empty it logs in with its
+	// client certificate.
+	Username         string `json:"opcua_username" yaml:"opcua_username"`
 	SecurityPolicy   string `json:"security_policy" yaml:"security_policy"`
 	SecurityMode     string `json:"security_mode" yaml:"security_mode"`
 	Vendor           string `json:"vendor" yaml:"vendor"`
