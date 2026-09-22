@@ -280,8 +280,13 @@ func (b *Browser) StoppedTime(ctx context.Context, result *ua.NodeID) (time.Time
 
 // ChangeWatchNodes returns the variables worth subscribing to for a ResultSet:
 // its NodeVersion (bumped whenever a result is added) and the Stopped/state
-// variable of every result already present.
-func (b *Browser) ChangeWatchNodes(ctx context.Context, resultSet *ua.NodeID) []*ua.NodeID {
+// variable of the most recent results.
+//
+// limit caps how many result variables are watched. Instruments keep their own
+// monitored-item budget, and an archive with thousands of stored results would
+// otherwise exhaust it and make the subscription fail as a whole. Newer results
+// are kept, since those are the ones that can still change.
+func (b *Browser) ChangeWatchNodes(ctx context.Context, resultSet *ua.NodeID, limit int) []*ua.NodeID {
 	var out []*ua.NodeID
 	if n, err := b.resolvePath(ctx, b.c.Node(resultSet), "NodeVersion"); err == nil {
 		out = append(out, n.ID)
@@ -289,6 +294,9 @@ func (b *Browser) ChangeWatchNodes(ctx context.Context, resultSet *ua.NodeID) []
 	results, err := b.Results(ctx, resultSet)
 	if err != nil {
 		return out
+	}
+	if limit > 0 && len(results) > limit {
+		results = results[len(results)-limit:]
 	}
 	for _, res := range results {
 		if n, err := b.StateVariable(ctx, res); err == nil {
