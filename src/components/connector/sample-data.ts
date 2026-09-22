@@ -6,7 +6,7 @@ export type DeviceStatus = "connected" | "disconnected" | "error" | "unknown";
 export const connector = {
   name: "lab-connector-01",
   location: "Building C, Lab 2.14",
-  version: "v1.0.0",
+  version: "v1.6.0",
   status: "degraded" as "online" | "degraded" | "offline",
   updateNote: "up to date",
   labnoteUrl: "https://labnote-light.com",
@@ -24,6 +24,10 @@ export const devices: {
   status: DeviceStatus;
   lastResult: string;
   method: string;
+  /** How the live connection is protected, as reported by the connector. */
+  security?: string;
+  /** When the instrument's own certificate expires. */
+  certificateUntil?: string;
   message?: string;
 }[] = [
   {
@@ -33,6 +37,8 @@ export const devices: {
     status: "connected",
     lastResult: "14:52:07",
     method: "Gradient 12 min",
+    security: "encrypted (Basic256Sha256)",
+    certificateUntil: "14 March 2027",
   },
   {
     name: "Plate reader 02",
@@ -41,6 +47,16 @@ export const devices: {
     status: "connected",
     lastResult: "14:38:11",
     method: "Absorbance 405 nm",
+    security: "encrypted (Aes256Sha256RsaPss)",
+    certificateUntil: "2 December 2026",
+  },
+  {
+    name: "Balance 03 (sends its reports)",
+    externalDeviceId: "BAL-03",
+    endpoint: "pushes reports to this connector",
+    status: "connected",
+    lastResult: "14:31:55",
+    method: "Weighing report",
   },
   {
     name: "HPLC 09",
@@ -59,10 +75,32 @@ export const profileOptions = [
 ];
 
 /** Instruments found on the network by the connector's search. */
-export const discovered: { name: string; endpoint: string; added: boolean }[] = [
-  { name: "LADS LuminescenceReader", endpoint: "opc.tcp://192.168.1.42:4840", added: false },
+export const discovered: {
+  name: string;
+  endpoint: string;
+  added: boolean;
+  /** Plain-language explanation of what this instrument offers. */
+  note?: string;
+}[] = [
+  {
+    name: "LADS LuminescenceReader",
+    endpoint: "opc.tcp://192.168.1.42:4840",
+    added: false,
+    note: "encrypted, certificate login",
+  },
   { name: "Agilent 1260 Infinity II", endpoint: "opc.tcp://192.168.1.50:4840", added: true },
-  { name: "Mettler Toledo XPR", endpoint: "opc.tcp://192.168.1.61:4840", added: false },
+  {
+    name: "Mettler Toledo XPR",
+    endpoint: "opc.tcp://192.168.1.61:4840",
+    added: false,
+    note: "encrypted, asks for a user name and password",
+  },
+];
+
+/** LADS devices found on one instrument, offered for selection. */
+export const deviceChoices = [
+  { nodeId: "ns=2;i=5001", label: "LuminescenceReader — LumiMax 400" },
+  { nodeId: "ns=2;i=7001", label: "Shaker — LumiShake 10" },
 ];
 
 /** Measurable parameters detected on the selected instrument. */
