@@ -390,8 +390,8 @@ func (s *Supervisor) dial(ctx context.Context) (*opcua.Client, error) {
 		opcua.RequestTimeout(20 * time.Second),
 	}
 	if user := strings.TrimSpace(s.ins.Username); user != "" {
-		// The instrument expects a user account. The channel stays
-		// Basic256Sha256 / SignAndEncrypt; only the login differs.
+		// The instrument expects a user account. The channel keeps the
+		// negotiated policy and mode; only the login differs.
 		pass := s.password
 		if pass == "" {
 			pass = keychain.InstrumentPassword(s.ins.ID)
