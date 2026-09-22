@@ -64,6 +64,12 @@ function Dashboard() {
                 <p className="mt-1 truncate font-mono text-[0.7rem] text-muted-foreground">
                   {d.endpoint}
                 </p>
+                {d.security ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {d.security}
+                    {d.certificateUntil ? ` · certificate valid until ${d.certificateUntil}` : ""}
+                  </p>
+                ) : null}
                 {d.message ? (
                   <p className="mt-2 text-xs text-destructive">{d.message}</p>
                 ) : null}

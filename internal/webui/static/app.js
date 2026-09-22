@@ -18,20 +18,93 @@ function hint(el, message, kind) {
   el.className = "hint" + (kind ? " " + kind : "");
 }
 
+// busy disables a button while its action runs, so the same request cannot be
+// started twice and the user can see that something is happening.
+async function busy(btn, label, fn) {
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.classList.add("working");
+  btn.textContent = label;
+  try {
+    return await fn();
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("working");
+    btn.textContent = original;
+  }
+}
+
+// --- field level validation ---------------------------------------------
+
+function setError(id, message) {
+  const field = $(id);
+  const box = $(id + "Error");
+  if (box) {
+    box.textContent = message || "";
+    box.hidden = !message;
+  }
+  field.classList.toggle("invalid", !!message);
+  field.setAttribute("aria-invalid", message ? "true" : "false");
+  return !message;
+}
+
+function validateSetup() {
+  const url = $("labnoteUrl").value.trim();
+  let ok = setError("labnoteUrl", !url
+    ? "Enter the address of your LabNote instance."
+    : /^https:\/\/.+/i.test(url)
+      ? ""
+      : "The address must start with https://");
+  const key = $("apiKey").value.trim();
+  const stored = latest && latest.api_key_stored;
+  ok = setError("apiKey", key || stored ? "" : "Paste the ingest API key from LabNote.") && ok;
+  return ok;
+}
+
+function validateInstrument() {
+  const push = $("insKind").value === "push";
+  let ok = setError("insName", $("insName").value.trim() ? "" : "Give the instrument a name people recognise.");
+  const id = $("insExternal").value.trim();
+  ok = setError("insExternal", !id
+    ? "Enter the device ID used in LabNote."
+    : /^[A-Za-z0-9._-]+$/.test(id)
+      ? ""
+      : "Use letters, numbers, dot, dash or underscore only.") && ok;
+  if (!push) {
+    const ep = $("insEndpoint").value.trim();
+    ok = setError("insEndpoint", !ep
+      ? "Enter the instrument address, e.g. opc.tcp://192.168.1.50:4840"
+      : /^opc\.tcp:\/\/[^\s/]+/i.test(ep)
+        ? ""
+        : "The address must look like opc.tcp://host:port") && ok;
+  } else {
+    setError("insEndpoint", "");
+  }
+  return ok;
+}
+
+// Clear an error as soon as the field is corrected.
+["labnoteUrl", "apiKey"].forEach((id) =>
+  $(id).addEventListener("input", () => setError(id, "")),
+);
+["insName", "insExternal", "insEndpoint"].forEach((id) =>
+  $(id).addEventListener("input", () => setError(id, "")),
+);
+
 function instrumentForm() {
   return {
     id: $("insId").value,
     kind: $("insKind").value,
     parameters: detectedParams.filter((p) => p.path),
-    name: $("insName").value,
-    external_device_id: $("insExternal").value,
-    opcua_endpoint_url: $("insEndpoint").value,
+    name: $("insName").value.trim(),
+    external_device_id: $("insExternal").value.trim(),
+    opcua_endpoint_url: $("insEndpoint").value.trim(),
     opcua_username: $("insUser").value,
     opcua_password: $("insPass").value,
     vendor: $("insVendor").value,
     model: $("insModel").value,
     device_type: $("insType").value,
-    lads_node_id: $("insNode").value,
+    lads_node_id: $("insNode").value.trim(),
     // Remembered so the device node can be found again after the instrument
     // renumbers its address space.
     lads_namespace_uri: detectedNamespace,
@@ -46,7 +119,30 @@ function instrumentForm() {
   };
 }
 
+// --- copy buttons --------------------------------------------------------
+
+document.querySelectorAll("button.copy").forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const text = $(btn.dataset.copy).textContent.trim();
+    try {
+      await navigator.clipboard.writeText(text);
+      const was = btn.textContent;
+      btn.textContent = "Copied";
+      setTimeout(() => (btn.textContent = was), 1500);
+    } catch {
+      // Clipboard access can be refused; select the text so it can be copied.
+      const range = document.createRange();
+      range.selectNodeContents($(btn.dataset.copy));
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
+});
+
 // --- discovered instruments ---------------------------------------------
+
+let discoverAbort = null;
 
 function renderDiscovered(servers) {
   const box = $("discoverResults");
@@ -61,8 +157,10 @@ function renderDiscovered(servers) {
   servers.forEach((srv) => {
     const row = document.createElement("tr");
     const name = document.createElement("td");
+    name.dataset.label = "Instrument";
     name.textContent = srv.server_name || "OPC UA server";
     const addr = document.createElement("td");
+    addr.dataset.label = "Address";
     addr.textContent = srv.endpoint_url + (srv.note ? " — " + srv.note : "");
     const act = document.createElement("td");
     if (srv.already_added) {
@@ -72,8 +170,18 @@ function renderDiscovered(servers) {
         $("insKind").value = "opcua";
         showPush(null);
         $("insEndpoint").value = srv.endpoint_url;
+        setError("insEndpoint", "");
         if (!$("insName").value) $("insName").value = srv.server_name || "";
-        hint($("instrumentHint"), "Address filled in. Give it a device ID, then Test connection.", "ok");
+        $("insAllowSign").checked = !srv.secure && !!srv.sign_only;
+        const logins = srv.logins || [];
+        if (logins.includes("user name") && !logins.includes("certificate")) {
+          hint($("instrumentHint"), "Address filled in. This instrument asks for a user name and password — enter them, then Test connection.", "ok");
+        } else if (!srv.secure && srv.sign_only) {
+          hint($("instrumentHint"), "Address filled in. This instrument only offers a signed, unencrypted connection, so that option has been ticked for you.", "ok");
+        } else {
+          hint($("instrumentHint"), "Address filled in. Give it a device ID, then Test connection.", "ok");
+        }
+        $("insExternal").focus();
       }));
     }
     row.append(name, addr, act);
@@ -112,11 +220,56 @@ function renderParams(params) {
   });
 }
 
+function setAllParams(on) {
+  detectedParams.forEach((p) => {
+    if (p.kind !== "expected") p.enabled = on;
+  });
+  renderParams(detectedParams);
+}
+
+$("paramAll").addEventListener("click", () => setAllParams(true));
+$("paramNone").addEventListener("click", () => setAllParams(false));
+
+// --- device picker (servers that host more than one LADS device) ----------
+
+function renderDevicePicker(devices) {
+  const row = $("rowDevicePick");
+  const select = $("insDevice");
+  if (!devices || devices.length < 2) {
+    row.hidden = true;
+    return;
+  }
+  select.innerHTML = "";
+  devices.forEach((d) => {
+    const opt = document.createElement("option");
+    opt.value = d.node_id;
+    opt.dataset.namespace = d.namespace_uri || "";
+    opt.textContent = `${d.name || "device"}${d.model ? " — " + d.model : ""}`;
+    select.append(opt);
+  });
+  const current = $("insNode").value;
+  if (devices.some((d) => d.node_id === current)) select.value = current;
+  else {
+    $("insNode").value = devices[0].node_id;
+    detectedNamespace = devices[0].namespace_uri || detectedNamespace;
+  }
+  row.hidden = false;
+}
+
+$("insDevice").addEventListener("change", () => {
+  const opt = $("insDevice").selectedOptions[0];
+  if (!opt) return;
+  $("insNode").value = opt.value;
+  detectedNamespace = opt.dataset.namespace || detectedNamespace;
+  hint($("instrumentHint"), `This instrument will report “${opt.textContent}”.`, "ok");
+});
+
 function fillForm(ins) {
   $("insId").value = ins.id || "";
   $("insKind").value = ins.kind || "opcua";
   showPush(ins);
   renderParams(ins.parameters || []);
+  renderDevicePicker(null);
   $("insName").value = ins.name || "";
   $("insExternal").value = ins.external_device_id || "";
   $("insEndpoint").value = ins.opcua_endpoint_url || "";
@@ -134,18 +287,28 @@ function fillForm(ins) {
   $("insProfile").value = ins.profile || "generic-lads";
   $("insUnitX").value = ins.default_unit_x || "";
   $("insUnitY").value = ins.default_unit_y || "";
+  ["labnoteUrl", "apiKey", "insName", "insExternal", "insEndpoint"].forEach((id) => setError(id, ""));
+  $("cancelEdit").hidden = !ins.id;
+  $("saveInstrument").textContent = ins.id ? "Save changes" : "Save instrument";
+  if (ins.id) $("instrumentCard").scrollIntoView({ behavior: "smooth", block: "start" });
 }
+
+$("cancelEdit").addEventListener("click", () => {
+  fillForm({});
+  hint($("instrumentHint"), "Editing cancelled.");
+});
 
 // showPush reveals the push address for instruments that send their reports.
 function showPush(ins) {
   const push = $("insKind").value === "push";
   $("pushBox").hidden = !push;
   // Fields and buttons that only apply to instruments the connector reads.
-  for (const id of ["rowEndpoint", "rowNode", "rowProfile", "rowSign"]) {
+  for (const id of ["rowEndpoint", "rowNode", "rowProfile", "rowSign", "rowUser", "rowPass"]) {
     $(id).hidden = push;
   }
   $("detectParams").hidden = push;
   $("paramBox").hidden = push || $("paramBox").hidden;
+  if (push) $("rowDevicePick").hidden = true;
   $("securityHint").hidden = push;
   $("testInstrument").textContent = push ? "Check for a report" : "Test connection";
   if (!push || !latest) return;
@@ -167,12 +330,12 @@ function renderInstruments(s) {
     const tr = document.createElement("tr");
     const status = live.connection_status || "unknown";
     tr.innerHTML = `
-      <td>${escape(ins.name)}</td>
-      <td>${escape(ins.external_device_id)}</td>
-      <td>${escape(ins.kind === "push" ? "pushes reports to this connector" : ins.opcua_endpoint_url)}</td>
-      <td><span class="pill ${status}">${status}</span></td>
-      <td>${live.last_result_at ? new Date(live.last_result_at).toLocaleString() : "—"}</td>
-      <td></td>`;
+      <td data-label="Name">${escape(ins.name)}</td>
+      <td data-label="Device ID">${escape(ins.external_device_id)}</td>
+      <td data-label="Endpoint">${escape(ins.kind === "push" ? "pushes reports to this connector" : ins.opcua_endpoint_url)}</td>
+      <td data-label="Status"><span class="pill ${status}">${status}</span></td>
+      <td data-label="Last result">${live.last_result_at ? new Date(live.last_result_at).toLocaleString() : "—"}</td>
+      <td data-label=""></td>`;
 
     // Plain-language notes about the live connection: which encryption is in
     // use, when the instrument certificate expires, and any non-fatal warning.
@@ -204,23 +367,25 @@ function renderInstruments(s) {
     cell.append(edit);
 
     if (live.pending_trust && live.server_cert_sha256) {
-      const trust = button("Trust certificate", "secondary", async () => {
-        if (!confirm(`Trust this instrument certificate?\n\n${live.server_cert_sha256}`)) return;
-        await api(`/api/instruments/${ins.id}/trust`, {
-          method: "POST",
-          body: JSON.stringify({ fingerprint: live.server_cert_sha256 }),
-        });
-        refresh();
-      });
+      const trust = button("Trust certificate", "secondary", (ev) =>
+        confirmAction(ev.currentTarget, `Trust ${live.server_cert_sha256.slice(0, 16)}…?`, async () => {
+          await api(`/api/instruments/${ins.id}/trust`, {
+            method: "POST",
+            body: JSON.stringify({ fingerprint: live.server_cert_sha256 }),
+          });
+          refresh();
+        }),
+      );
       cell.append(trust);
     }
 
     cell.append(
-      button("Remove", "link", async () => {
-        if (!confirm(`Remove ${ins.name || ins.external_device_id}?`)) return;
-        await api(`/api/instruments/${ins.id}`, { method: "DELETE" });
-        refresh();
-      }),
+      button("Remove", "link", (ev) =>
+        confirmAction(ev.currentTarget, "Really remove?", async () => {
+          await api(`/api/instruments/${ins.id}`, { method: "DELETE" });
+          refresh();
+        }),
+      ),
     );
     tbody.append(tr);
   });
@@ -230,17 +395,48 @@ function renderInstruments(s) {
   }
 }
 
+// confirmAction replaces the browser's own dialog: the button asks once more in
+// place, and reverts if it is not confirmed within a few seconds.
+function confirmAction(btn, question, run) {
+  if (btn.dataset.confirming === "1") {
+    btn.dataset.confirming = "0";
+    run();
+    return;
+  }
+  const original = btn.textContent;
+  btn.dataset.confirming = "1";
+  btn.textContent = question;
+  btn.classList.add("confirming");
+  setTimeout(() => {
+    if (btn.dataset.confirming !== "1") return;
+    btn.dataset.confirming = "0";
+    btn.textContent = original;
+    btn.classList.remove("confirming");
+  }, 5000);
+}
+
 function button(label, cls, onClick) {
   const b = document.createElement("button");
+  b.type = "button";
   b.textContent = label;
   b.className = cls;
-  b.style.marginRight = ".5rem";
   b.addEventListener("click", onClick);
   return b;
 }
 
 function escape(v) {
   return String(v ?? "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+}
+
+// setStep marks a setup step as done or still open, so it is obvious at a
+// glance what is left to do.
+function setStep(navId, stateId, done, text) {
+  $(navId).classList.toggle("done", done);
+  const badge = $(stateId);
+  if (badge) {
+    badge.textContent = text;
+    badge.className = "state" + (done ? " done" : "");
+  }
 }
 
 function render(s) {
@@ -274,6 +470,13 @@ function render(s) {
     });
   }
 
+  const connected = !!(s.labnote_url && s.api_key_stored);
+  setStep("navStep1", "state1", connected, connected ? "connected" : "not set up");
+  setStep("navStep2", null, !!s.client_certificate_fingerprint);
+  const count = (s.instruments || []).length;
+  setStep("navStep3", "state3", count > 0, count ? `${count} configured` : "none yet");
+  setStep("navStep4", null, s.runtime.status === "online");
+
   renderInstruments(s);
 }
 
@@ -285,85 +488,123 @@ async function refresh() {
   }
 }
 
-$("saveSetup").addEventListener("click", async () => {
-  hint($("setupHint"), "Testing…");
-  try {
-    await api("/api/setup", {
-      method: "POST",
-      body: JSON.stringify({
-        labnote_url: $("labnoteUrl").value,
-        api_key: $("apiKey").value,
-        name: $("name").value,
-        location: $("location").value,
-      }),
-    });
-    $("apiKey").value = "";
-    hint($("setupHint"), "Connected to LabNote and saved.", "ok");
-    refresh();
-  } catch (err) {
-    hint($("setupHint"), err.message, "bad");
+$("saveSetup").addEventListener("click", async (ev) => {
+  if (!validateSetup()) {
+    hint($("setupHint"), "Please correct the highlighted fields.", "bad");
+    return;
   }
+  hint($("setupHint"), "Testing the connection to LabNote…");
+  await busy(ev.currentTarget, "Testing…", async () => {
+    try {
+      await api("/api/setup", {
+        method: "POST",
+        body: JSON.stringify({
+          labnote_url: $("labnoteUrl").value.trim(),
+          api_key: $("apiKey").value,
+          name: $("name").value,
+          location: $("location").value,
+        }),
+      });
+      $("apiKey").value = "";
+      hint($("setupHint"), "Connected to LabNote and saved.", "ok");
+      refresh();
+    } catch (err) {
+      hint($("setupHint"), err.message, "bad");
+    }
+  });
 });
 
-$("saveInstrument").addEventListener("click", async () => {
-  hint($("instrumentHint"), "Saving…");
-  try {
-    await api("/api/instruments", { method: "POST", body: JSON.stringify(instrumentForm()) });
-    $("insPass").value = "";
-    hint($("instrumentHint"), "Saved. The connector is establishing the session.", "ok");
-    fillForm({});
-    refresh();
-  } catch (err) {
-    hint($("instrumentHint"), err.message, "bad");
+$("saveInstrument").addEventListener("click", async (ev) => {
+  if (!validateInstrument()) {
+    hint($("instrumentHint"), "Please correct the highlighted fields.", "bad");
+    return;
   }
+  await busy(ev.currentTarget, "Saving…", async () => {
+    try {
+      await api("/api/instruments", { method: "POST", body: JSON.stringify(instrumentForm()) });
+      $("insPass").value = "";
+      hint($("instrumentHint"), "Saved. The connector is establishing the session.", "ok");
+      fillForm({});
+      refresh();
+    } catch (err) {
+      hint($("instrumentHint"), err.message, "bad");
+    }
+  });
 });
 
-$("testInstrument").addEventListener("click", async () => {
-  hint($("instrumentHint"), "Browsing the instrument…");
-  try {
-    const report = await api("/api/instruments/test", { method: "POST", body: JSON.stringify(instrumentForm()) });
-    const devices = (report.devices || []).map((d) => `${d.name} (${d.model || "unknown model"})`).join(", ");
-    hint($("instrumentHint"), report.message + (devices ? " — " + devices : ""), report.ok ? "ok" : "bad");
-    refresh();
-  } catch (err) {
-    hint($("instrumentHint"), err.message, "bad");
+$("testInstrument").addEventListener("click", async (ev) => {
+  if (!validateInstrument()) {
+    hint($("instrumentHint"), "Please correct the highlighted fields.", "bad");
+    return;
   }
+  hint($("instrumentHint"), "Contacting the instrument…");
+  await busy(ev.currentTarget, "Testing…", async () => {
+    try {
+      const report = await api("/api/instruments/test", { method: "POST", body: JSON.stringify(instrumentForm()) });
+      renderDevicePicker(report.devices);
+      const devices = (report.devices || []).map((d) => `${d.name} (${d.model || "unknown model"})`).join(", ");
+      let message = report.message + (devices ? " — " + devices : "");
+      if ((report.devices || []).length > 1) {
+        message += " Choose which one this instrument entry should report.";
+      }
+      if (report.trust_required) {
+        message += " Save it, then use “Trust certificate” in the table above.";
+      }
+      hint($("instrumentHint"), message, report.ok ? "ok" : "bad");
+      refresh();
+    } catch (err) {
+      hint($("instrumentHint"), err.message, "bad");
+    }
+  });
 });
 
-$("discover").addEventListener("click", async () => {
+$("discover").addEventListener("click", async (ev) => {
   hint($("discoverHint"), "Searching the network… this takes up to a minute.");
-  $("discover").disabled = true;
-  try {
-    const extra = $("discoverExtra").value.trim();
-    const res = await api("/api/discover", {
-      method: "POST",
-      body: JSON.stringify({ extra: extra ? [extra] : [] }),
-    });
-    renderDiscovered(res.servers || []);
-  } catch (err) {
-    hint($("discoverHint"), err.message, "bad");
-  } finally {
-    $("discover").disabled = false;
-  }
+  discoverAbort = new AbortController();
+  $("discoverCancel").hidden = false;
+  await busy(ev.currentTarget, "Searching…", async () => {
+    try {
+      const extra = $("discoverExtra").value.trim();
+      const res = await api("/api/discover", {
+        method: "POST",
+        signal: discoverAbort.signal,
+        body: JSON.stringify({ extra: extra ? [extra] : [] }),
+      });
+      renderDiscovered(res.servers || []);
+    } catch (err) {
+      if (err.name === "AbortError") hint($("discoverHint"), "Search stopped.");
+      else hint($("discoverHint"), err.message, "bad");
+    } finally {
+      $("discoverCancel").hidden = true;
+      discoverAbort = null;
+    }
+  });
 });
 
-$("detectParams").addEventListener("click", async () => {
-  hint($("instrumentHint"), "Asking the instrument what it measures…");
-  $("detectParams").disabled = true;
-  try {
-    const report = await api("/api/instruments/parameters", {
-      method: "POST",
-      body: JSON.stringify(instrumentForm()),
-    });
-    renderParams((report.parameters || []).map((p) => ({ ...p, enabled: !!p.recommended })));
-    if (report.lads_node_id && !$("insNode").value) $("insNode").value = report.lads_node_id;
-    if (report.lads_namespace_uri) detectedNamespace = report.lads_namespace_uri;
-    hint($("instrumentHint"), report.message, report.ok ? "ok" : "bad");
-  } catch (err) {
-    hint($("instrumentHint"), err.message, "bad");
-  } finally {
-    $("detectParams").disabled = false;
+$("discoverCancel").addEventListener("click", () => {
+  if (discoverAbort) discoverAbort.abort();
+});
+
+$("detectParams").addEventListener("click", async (ev) => {
+  if (!validateInstrument()) {
+    hint($("instrumentHint"), "Please correct the highlighted fields.", "bad");
+    return;
   }
+  hint($("instrumentHint"), "Asking the instrument what it measures…");
+  await busy(ev.currentTarget, "Detecting…", async () => {
+    try {
+      const report = await api("/api/instruments/parameters", {
+        method: "POST",
+        body: JSON.stringify(instrumentForm()),
+      });
+      renderParams((report.parameters || []).map((p) => ({ ...p, enabled: !!p.recommended })));
+      if (report.lads_node_id && !$("insNode").value) $("insNode").value = report.lads_node_id;
+      if (report.lads_namespace_uri) detectedNamespace = report.lads_namespace_uri;
+      hint($("instrumentHint"), report.message, report.ok ? "ok" : "bad");
+    } catch (err) {
+      hint($("instrumentHint"), err.message, "bad");
+    }
+  });
 });
 
 $("insKind").addEventListener("change", () => showPush(null));
