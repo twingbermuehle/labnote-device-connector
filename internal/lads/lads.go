@@ -83,6 +83,7 @@ func (b *Browser) Devices(ctx context.Context) ([]Device, error) {
 		}
 
 		d := Device{NodeID: child.ID.String(), Name: name.Name}
+		d.NamespaceURI = b.NamespaceURI(ctx, d.NodeID)
 		d.Manufacturer, _ = b.readStringChild(ctx, child, "Manufacturer")
 		d.Model, _ = b.readStringChild(ctx, child, "Model")
 		d.SerialNumber, _ = b.readStringChild(ctx, child, "SerialNumber")
