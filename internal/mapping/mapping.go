@@ -97,8 +97,11 @@ func Build(
 		r.LADS["measured_at_estimated"] = true
 		r.Summary["measured_at_estimated"] = true
 	}
-	if unit := functionalUnitOf(resultNode, ins); unit != "" {
-		r.LADS["functional_unit"] = unit
+	if o.functionalUnit != "" {
+		// A device with several functional units (autosampler, detector, ...)
+		// would otherwise produce indistinguishable records.
+		r.LADS["functional_unit"] = o.functionalUnit
+		r.Summary["functional_unit"] = o.functionalUnit
 	}
 	if r.Operator != "" {
 		r.Summary["operator"] = r.Operator
