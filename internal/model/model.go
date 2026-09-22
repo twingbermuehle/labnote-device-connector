@@ -5,12 +5,37 @@ package model
 
 import "time"
 
-// SecurityMode values accepted by the connector. Only SignAndEncrypt is
-// allowed; None and Sign are rejected at configuration time.
+// SecurityMode values accepted by the connector. SignAndEncrypt is the default
+// and always preferred; Sign is accepted only when the instrument offers
+// nothing better and the operator opted in. None / anonymous is always refused.
 const (
-	SecurityModeSignAndEncrypt   = "SignAndEncrypt"
-	SecurityPolicyBasic256Sha256 = "Basic256Sha256"
+	SecurityModeSignAndEncrypt = "SignAndEncrypt"
+	SecurityModeSign           = "Sign"
+
+	// Security policies the connector can negotiate, weakest to strongest.
+	SecurityPolicyBasic256Sha256        = "Basic256Sha256"
+	SecurityPolicyAes128Sha256RsaOaep   = "Aes128_Sha256_RsaOaep"
+	SecurityPolicyAes256Sha256RsaPss    = "Aes256_Sha256_RsaPss"
+	// SecurityPolicyAuto lets the connector pick the strongest policy the
+	// instrument offers. This is the default for new instruments.
+	SecurityPolicyAuto = "auto"
 )
+
+// SecurityPolicyRank scores the accepted policies; higher is stronger.
+var SecurityPolicyRank = map[string]int{
+	SecurityPolicyBasic256Sha256:      1,
+	SecurityPolicyAes128Sha256RsaOaep: 2,
+	SecurityPolicyAes256Sha256RsaPss:  3,
+}
+
+// AcceptedSecurityPolicy reports whether the connector can use a policy name.
+func AcceptedSecurityPolicy(p string) bool {
+	if p == SecurityPolicyAuto {
+		return true
+	}
+	_, ok := SecurityPolicyRank[p]
+	return ok
+}
 
 // Connection states reported per device.
 const (
