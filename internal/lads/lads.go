@@ -205,14 +205,14 @@ func (b *Browser) ResolveNodeID(ctx context.Context, nodeID, namespaceURI string
 	if uint16(want) == nid.Namespace() {
 		return nodeID, nil
 	}
-	moved := ua.NewStringNodeID(uint16(want), nid.StringID())
-	switch nid.Type() {
-	case ua.NodeIDTypeNumeric, ua.NodeIDTypeTwoByte, ua.NodeIDTypeFourByte:
-		moved = ua.NewNumericNodeID(uint16(want), nid.IntID())
-	case ua.NodeIDTypeGUID:
-		moved = ua.NewStringNodeID(uint16(want), nid.StringID())
-	case ua.NodeIDTypeByteString:
-		moved = ua.NewByteStringNodeID(uint16(want), nid.ByteString())
+	// Only the namespace index moves; the identifier itself is untouched, which
+	// keeps numeric, string, GUID and opaque identifiers all working.
+	moved, err := ua.ParseNodeID(nodeID)
+	if err != nil {
+		return "", err
+	}
+	if err := moved.SetNamespace(uint16(want)); err != nil {
+		return "", fmt.Errorf("re-map node id to namespace %q: %w", namespaceURI, err)
 	}
 	return moved.String(), nil
 }
