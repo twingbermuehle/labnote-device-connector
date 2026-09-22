@@ -61,3 +61,24 @@ dd { margin: 0; }
 .pill.connected { color: var(--ok); border-color: var(--ok); }
 .pill.error, .pill.disconnected { color: var(--bad); border-color: var(--bad); }
 .pill.unknown { color: var(--muted); }
+
+/* Small explanatory line under a status pill or field. */
+.note {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted, #8b8b94);
+  line-height: 1.35;
+}
+
+/* Checkbox rows sit on one line instead of stacking like text fields. */
+label.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 400;
+}
+
+label.check input {
+  width: auto;
+  margin-top: 2px;
+}
