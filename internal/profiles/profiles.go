@@ -51,6 +51,15 @@ type Profile struct {
 	// Values considered "finished" for the result state variable.
 	FinishedStates []string `yaml:"finished_states"`
 
+	// AmbiguousStates are state names that mean "not running" but not
+	// necessarily "a result was produced" (Ready, Idle, ...). They count as
+	// finished only when the result also carries a stop timestamp.
+	AmbiguousStates []string `yaml:"ambiguous_states"`
+
+	// FinishedStateNumbers are state machine numbers considered finished, for
+	// instruments that report CurrentState/Number instead of readable text.
+	FinishedStateNumbers []int `yaml:"finished_state_numbers"`
+
 	DefaultUnitX string `yaml:"default_unit_x"`
 	DefaultUnitY string `yaml:"default_unit_y"`
 }
