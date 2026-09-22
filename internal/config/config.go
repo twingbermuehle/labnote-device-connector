@@ -124,7 +124,7 @@ func (s *Store) write(c Config) error {
 
 // ErrInsecureEndpoint is returned when an instrument does not require
 // SignAndEncrypt. Anonymous / None endpoints are never accepted.
-var ErrInsecureEndpoint = errors.New("instrument must use Basic256Sha256 / SignAndEncrypt; None and anonymous auth are rejected")
+var ErrInsecureEndpoint = errors.New("instrument must use an encrypted (SignAndEncrypt) or at least signed (Sign) session; None and anonymous auth are rejected")
 
 func (c *Config) validate() error {
 	if c.IngestPort == 0 {

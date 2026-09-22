@@ -39,30 +39,61 @@ func VariantToString(v *ua.Variant) string {
 }
 
 // VariantToFloats converts a numeric scalar or array variant to []float64.
+// Structured values (ExtensionObject, DataValue, Variant) are unwrapped first,
+// which is how some array-sensor instruments deliver their curves.
 func VariantToFloats(v *ua.Variant) ([]float64, bool) {
 	if v == nil {
 		return nil, false
 	}
-	raw := v.Value()
+	return floatsFromAny(v.Value())
+}
+
+func floatsFromAny(raw any) ([]float64, bool) {
 	if raw == nil {
 		return nil, false
+	}
+	if f, ok := toFloat(raw); ok {
+		return []float64{f}, true
+	}
+	if inner, ok := unwrap(raw); ok {
+		return floatsFromAny(inner)
 	}
 	rv := reflect.ValueOf(raw)
 	switch rv.Kind() {
 	case reflect.Slice, reflect.Array:
 		out := make([]float64, 0, rv.Len())
 		for i := 0; i < rv.Len(); i++ {
-			f, ok := toFloat(rv.Index(i).Interface())
+			nums, ok := floatsFromAny(rv.Index(i).Interface())
 			if !ok {
 				return nil, false
 			}
-			out = append(out, f)
+			out = append(out, nums...)
 		}
 		return out, len(out) > 0
 	default:
-		if f, ok := toFloat(raw); ok {
-			return []float64{f}, true
+		return nil, false
+	}
+}
+
+// unwrap peels one layer of OPC UA structure wrapping.
+func unwrap(raw any) (any, bool) {
+	switch val := raw.(type) {
+	case *ua.ExtensionObject:
+		if val == nil || val.Value == nil {
+			return nil, false
 		}
+		return val.Value, true
+	case *ua.Variant:
+		if val == nil {
+			return nil, false
+		}
+		return val.Value(), true
+	case *ua.DataValue:
+		if val == nil || val.Value == nil {
+			return nil, false
+		}
+		return val.Value.Value(), true
+	default:
 		return nil, false
 	}
 }
