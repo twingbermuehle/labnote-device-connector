@@ -127,6 +127,8 @@ function fillForm(ins) {
   $("insModel").value = ins.model || "";
   $("insType").value = ins.device_type || "";
   $("insNode").value = ins.lads_node_id || "";
+  detectedNamespace = ins.lads_namespace_uri || "";
+  $("insAllowSign").checked = !!ins.allow_sign_only;
   $("insProfile").value = ins.profile || "generic-lads";
   $("insUnitX").value = ins.default_unit_x || "";
   $("insUnitY").value = ins.default_unit_y || "";
