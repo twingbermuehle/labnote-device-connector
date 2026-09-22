@@ -14,7 +14,27 @@ import (
 
 	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/ua"
+
+	"github.com/labnote/labnote-device-connector/internal/model"
 )
+
+// policyName reduces a security policy URI to its short name.
+func policyName(uri string) string {
+	if i := strings.LastIndex(uri, "#"); i >= 0 {
+		return uri[i+1:]
+	}
+	return uri
+}
+
+// addOnce appends a value if it is not in the list yet.
+func addOnce(list *[]string, v string) {
+	for _, x := range *list {
+		if x == v {
+			return
+		}
+	}
+	*list = append(*list, v)
+}
 
 // Ports probed on every address. 4840 is the registered OPC UA port; the others
 // are the usual alternatives, including the LADS reference server's port.
