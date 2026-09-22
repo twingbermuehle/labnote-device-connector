@@ -162,19 +162,34 @@ func (s *Supervisor) session(ctx context.Context) error {
 	// ResultSet NodeVersion, plus each result's state or Stopped variable.
 	// Any notification triggers a rescan, which is cheap and order-safe.
 	var handle uint32
-	monitored := 0
+	monitored, refused := 0, 0
+	// Instruments enforce their own monitored-item budget; watching a whole
+	// result archive would exhaust it, so only recent results are watched and
+	// the periodic rescan covers the rest.
+	const watchPerResultSet = 50
 	for _, rs := range resultSets {
-		for _, node := range browser.ChangeWatchNodes(ctx, rs) {
+		for _, node := range browser.ChangeWatchNodes(ctx, rs.Node, watchPerResultSet) {
 			handle++
 			req := opcua.NewMonitoredItemCreateRequestWithDefaults(node, ua.AttributeIDValue, handle)
 			if _, err := sub.Monitor(ctx, ua.TimestampsToReturnSource, req); err != nil {
+				refused++
 				s.log.Warn("monitor node failed", "error", err)
 				continue
 			}
 			monitored++
 		}
 	}
-	s.log.Info("subscribed", "monitored_items", monitored)
+	if refused > 0 {
+		s.st.SetWarning(s.ins, fmt.Sprintf(
+			"%d of %d instrument signals could not be watched live; results are still collected by regular polling.",
+			refused, refused+monitored))
+	} else {
+		s.st.SetWarning(s.ins, "")
+	}
+	if monitored == 0 {
+		s.log.Warn("no live signals available, relying on polling")
+	}
+	s.log.Info("subscribed", "monitored_items", monitored, "refused", refused)
 
 	keepAlive := time.NewTicker(30 * time.Second)
 	defer keepAlive.Stop()
