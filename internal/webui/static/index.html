@@ -4,6 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LabNote Device Connector — local setup</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -22,26 +28,58 @@
     </header>
 
     <main>
+      <nav class="steps" aria-label="Setup progress">
+        <a href="#setupCard" class="step" id="navStep1"><span class="num">1</span> LabNote</a>
+        <a href="#certCard" class="step" id="navStep2"><span class="num">2</span> Certificate</a>
+        <a href="#instrumentCard" class="step" id="navStep3"><span class="num">3</span> Instruments</a>
+        <a href="#statusCard" class="step" id="navStep4"><span class="num">4</span> Status</a>
+      </nav>
+
       <section class="card" id="setupCard">
-        <h2>1. Connection to LabNote</h2>
-        <label>LabNote address<input id="labnoteUrl" placeholder="https://your-instance.example.com" /></label>
-        <label>Ingest API key<input id="apiKey" type="password" placeholder="stored in the operating system credential store" autocomplete="off" /></label>
+        <h2>1. Connection to LabNote <span class="state" id="state1">not set up</span></h2>
+        <label>
+          LabNote address
+          <input
+            id="labnoteUrl"
+            type="url"
+            inputmode="url"
+            placeholder="https://your-instance.example.com"
+            aria-describedby="labnoteUrlError"
+          />
+          <span class="error" id="labnoteUrlError" hidden></span>
+        </label>
+        <label>
+          Ingest API key
+          <input
+            id="apiKey"
+            type="password"
+            placeholder="stored in the operating system credential store"
+            autocomplete="off"
+            aria-describedby="apiKeyError"
+          />
+          <span class="error" id="apiKeyError" hidden></span>
+        </label>
         <div class="row">
           <label>Connector name<input id="name" placeholder="lab-connector-01" /></label>
           <label>Location<input id="location" placeholder="Building C, Lab 2.14" /></label>
         </div>
-        <button id="saveSetup">Save and test</button>
-        <p class="hint" id="setupHint"></p>
+        <div class="actions">
+          <button id="saveSetup">Save and test</button>
+        </div>
+        <p class="hint" id="setupHint" role="status" aria-live="polite"></p>
       </section>
 
-      <section class="card">
+      <section class="card" id="certCard">
         <h2>2. Client certificate</h2>
         <p>Trust this fingerprint on every instrument so it accepts the connector:</p>
-        <code id="fingerprint">—</code>
+        <div class="copyable">
+          <code id="fingerprint">—</code>
+          <button class="secondary copy" data-copy="fingerprint" type="button">Copy</button>
+        </div>
       </section>
 
-      <section class="card">
-        <h2>3. Instruments</h2>
+      <section class="card" id="instrumentCard">
+        <h2>3. Instruments <span class="state" id="state3">none yet</span></h2>
         <table id="instrumentTable">
           <thead>
             <tr><th>Name</th><th>Device ID</th><th>Endpoint</th><th>Status</th><th>Last result</th><th></th></tr>
@@ -53,10 +91,11 @@
         <p class="hint">Searches this network for OPC UA / LADS instruments. Takes up to a minute.</p>
         <div class="actions">
           <button id="discover" class="secondary">Search for instruments</button>
+          <button id="discoverCancel" class="link" hidden>Stop searching</button>
           <input id="discoverExtra" placeholder="other address, optional, e.g. 10.0.5.20" />
         </div>
         <div id="discoverResults"></div>
-        <p class="hint" id="discoverHint"></p>
+        <p class="hint" id="discoverHint" role="status" aria-live="polite"></p>
 
         <h3>Add or edit an instrument</h3>
         <div class="grid">
@@ -64,15 +103,31 @@
             <option value="opcua">OPC UA instrument (connector reads it)</option>
             <option value="push">Instrument sends its reports (e.g. Sartorius Cubis II balance)</option>
           </select></label>
-          <label>Friendly name<input id="insName" placeholder="HPLC 07" /></label>
-          <label>Device ID<input id="insExternal" placeholder="HPLC-07" /></label>
-          <label id="rowEndpoint">OPC UA endpoint<input id="insEndpoint" placeholder="opc.tcp://192.168.1.50:4840" /></label>
+          <label>
+            Friendly name
+            <input id="insName" placeholder="HPLC 07" aria-describedby="insNameError" />
+            <span class="error" id="insNameError" hidden></span>
+          </label>
+          <label>
+            Device ID
+            <input id="insExternal" placeholder="HPLC-07" aria-describedby="insExternalError" />
+            <span class="error" id="insExternalError" hidden></span>
+          </label>
+          <label id="rowEndpoint">
+            OPC UA endpoint
+            <input id="insEndpoint" placeholder="opc.tcp://192.168.1.50:4840" aria-describedby="insEndpointError" />
+            <span class="error" id="insEndpointError" hidden></span>
+          </label>
           <label id="rowUser">OPC UA user name (leave empty if the instrument needs no user login)<input id="insUser" placeholder="e.g. labnote" autocomplete="off" /></label>
           <label id="rowPass">OPC UA password<input id="insPass" type="password" placeholder="stored in the operating system credential store" autocomplete="off" /></label>
           <label>Vendor<input id="insVendor" placeholder="agilent" /></label>
           <label>Model<input id="insModel" placeholder="1260 Infinity II" /></label>
           <label>Device type<input id="insType" placeholder="hplc" /></label>
           <label id="rowNode">LADS device node (leave empty — filled in automatically)<input id="insNode" placeholder="ns=2;i=5001" /></label>
+          <label id="rowDevicePick" hidden>
+            Which device on this instrument?
+            <select id="insDevice"></select>
+          </label>
           <label id="rowSign" class="check">
             <input id="insAllowSign" type="checkbox" />
             Allow a signed but unencrypted connection if the instrument offers nothing better
@@ -84,28 +139,39 @@
         <div class="card" id="pushBox" hidden>
           <h3>Address for the instrument</h3>
           <p>Enter this in the balance under Settings / Connectors as an HTTPS connector, then send every weighing report to it:</p>
-          <code id="pushUrl">save the instrument to generate its address</code>
+          <div class="copyable">
+            <code id="pushUrl">save the instrument to generate its address</code>
+            <button class="secondary copy" data-copy="pushUrl" type="button">Copy</button>
+          </div>
           <p class="hint">The balance must trust this certificate fingerprint (or allow unknown certificate authorities):</p>
-          <code id="pushFingerprint">—</code>
+          <div class="copyable">
+            <code id="pushFingerprint">—</code>
+            <button class="secondary copy" data-copy="pushFingerprint" type="button">Copy</button>
+          </div>
         </div>
         <div class="card" id="paramBox" hidden>
           <h3>Measurable parameters</h3>
           <p class="hint">Detected on the instrument. Ticked parameters are sent to LabNote.</p>
+          <div class="actions small">
+            <button id="paramAll" class="link" type="button">Tick all</button>
+            <button id="paramNone" class="link" type="button">Untick all</button>
+          </div>
           <div id="paramList"></div>
         </div>
-        <p class="hint" id="securityHint">The connection is always encrypted (Basic256Sha256 / SignAndEncrypt). Leave the user name empty to log in with the connector certificate, or enter the user name and password the instrument expects.</p>
+        <p class="hint" id="securityHint">The connection always uses the strongest encryption the instrument offers (Basic256Sha256, Aes128 or Aes256). Leave the user name empty to log in with the connector certificate, or enter the user name and password the instrument expects.</p>
         <div class="actions">
           <button id="testInstrument" class="secondary">Test connection</button>
           <span id="opcuaActions" style="display:contents">
           <button id="detectParams" class="secondary">Detect parameters</button>
           </span>
           <button id="saveInstrument">Save instrument</button>
+          <button id="cancelEdit" class="link" hidden>Cancel editing</button>
           <input type="hidden" id="insId" />
         </div>
-        <p class="hint" id="instrumentHint"></p>
+        <p class="hint" id="instrumentHint" role="status" aria-live="polite"></p>
       </section>
 
-      <section class="card">
+      <section class="card" id="statusCard">
         <h2>4. Status</h2>
         <dl>
           <dt>Connector</dt><dd id="connectorStatus">—</dd>
