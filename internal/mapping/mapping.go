@@ -5,6 +5,7 @@ package mapping
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gopcua/opcua/ua"
