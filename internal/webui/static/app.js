@@ -638,6 +638,12 @@ $("detectParams").addEventListener("click", async (ev) => {
         method: "POST",
         body: JSON.stringify(instrumentForm()),
       });
+      if (report.mode === "values" && $("insMode").value === "auto") {
+        // The instrument has no LADS model, so the connector has to watch one
+        // of its values; preselect that mode and the suggested value.
+        $("insMode").value = "values";
+      }
+      if (report.trigger_path) triggerPath = report.trigger_path;
       renderParams((report.parameters || []).map((p) => ({ ...p, enabled: !!p.recommended })));
       if (report.lads_node_id && !$("insNode").value) $("insNode").value = report.lads_node_id;
       if (report.lads_namespace_uri) detectedNamespace = report.lads_namespace_uri;
