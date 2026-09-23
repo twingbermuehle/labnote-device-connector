@@ -318,10 +318,19 @@ func (s *Supervisor) resolveDevice(ctx context.Context, browser *lads.Browser) (
 		return resolved, nil
 	}
 	devices, err := browser.Devices(ctx)
-	if err != nil {
-		return "", fmt.Errorf("discover LADS devices: %w", err)
-	}
-	if len(devices) == 0 {
+	if err != nil || len(devices) == 0 {
+		// A plain OPC UA server (a balance, for instance) has no LADS device.
+		// Unless LADS was demanded explicitly, look for an object that carries
+		// readable values instead.
+		if s.ins.OPCUAMode != model.ModeLADS {
+			if plain, perr := browser.PlainDevices(ctx); perr == nil && len(plain) > 0 {
+				s.log.Info("plain OPC UA device selected", "node_id", plain[0].NodeID, "name", plain[0].Name)
+				return plain[0].NodeID, nil
+			}
+		}
+		if err != nil {
+			return "", fmt.Errorf("discover LADS devices: %w", err)
+		}
 		return "", errors.New("instrument exposes no LADS device")
 	}
 	if len(devices) > 1 {
