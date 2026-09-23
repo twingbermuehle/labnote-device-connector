@@ -1,0 +1,27 @@
+# Sartorius Cubis / Simple Scale OPC UA server (plain OPC UA, not LADS).
+#
+# These balances publish their weight as ordinary OPC UA variables below an
+# object named "Simple Scale" and expose no FunctionalUnitSet or ResultSet, so
+# the connector reads values instead of LADS results.
+#
+# RegisteredWeight changes when the operator registers a weighing, which makes
+# it the natural trigger for one measurement. CurrentWeight moves continuously
+# and is only read alongside it.
+id: sartorius-cubis-opcua
+description: Sartorius Cubis / Simple Scale (plain OPC UA, no LADS model)
+vendor: sartorius
+model: Cubis II
+device_type: balance
+
+opcua_mode: values
+
+value_trigger_paths:
+  - RegisteredWeight
+  - Simple Scale/RegisteredWeight
+  - RegisteredValue
+
+value_paths:
+  - CurrentWeight
+
+default_unit_x: ""
+default_unit_y: g
