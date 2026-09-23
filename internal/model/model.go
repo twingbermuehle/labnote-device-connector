@@ -61,6 +61,13 @@ const (
 	KindPush  = "push"
 )
 
+// OPC UA reading modes, see Instrument.OPCUAMode.
+const (
+	ModeAuto   = "auto"
+	ModeLADS   = "lads"
+	ModeValues = "values"
+)
+
 // Instrument is one configured instrument.
 type Instrument struct {
 	ID   string `json:"id" yaml:"id"`
@@ -86,6 +93,20 @@ type Instrument struct {
 	// Namespace indices are not stable across instrument restarts, so the node
 	// id is re-resolved against this URI on every connect.
 	LADSNamespaceURI string `json:"lads_namespace_uri,omitempty" yaml:"lads_namespace_uri,omitempty"`
+	// OPCUAMode decides how the instrument is read:
+	//
+	//	auto   - try the LADS model first, fall back to plain variables
+	//	lads   - LADS only (fail loudly when the model is missing)
+	//	values - read plain OPC UA variables (balances and other simple
+	//	         servers that publish no LADS result set)
+	//
+	// Empty means ModeAuto, which is what older configurations expect.
+	OPCUAMode string `json:"opcua_mode,omitempty" yaml:"opcua_mode,omitempty"`
+	// TriggerPath is the browse-name chain, relative to the device node, of the
+	// variable whose change means "a new measurement was taken" in values mode
+	// (for a Sartorius balance: RegisteredWeight). Empty lets the mapping
+	// profile decide.
+	TriggerPath string `json:"trigger_path,omitempty" yaml:"trigger_path,omitempty"`
 	// AllowSignOnly lets the connector fall back to a signed-but-unencrypted
 	// session when the instrument offers nothing stronger. Off by default.
 	AllowSignOnly bool `json:"allow_sign_only" yaml:"allow_sign_only"`

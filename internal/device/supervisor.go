@@ -133,9 +133,26 @@ func (s *Supervisor) session(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	mode := s.ins.OPCUAMode
+	if mode == "" {
+		mode = s.profile.OPCUAMode
+	}
+	if mode == "" {
+		mode = model.ModeAuto
+	}
+	if mode == model.ModeValues {
+		return s.valueSession(ctx, client, browser, deviceNode)
+	}
 	resultSets, err := browser.ResultSetNodes(ctx, deviceNode)
 	if err != nil {
-		return fmt.Errorf("browse LADS model: %w", err)
+		if mode == model.ModeLADS {
+			return fmt.Errorf("browse LADS model: %w", err)
+		}
+		// Not a LADS instrument (a balance publishing plain variables, for
+		// example): read its values instead of its results.
+		s.log.Info("no LADS model on this instrument, reading plain values instead", "reason", err.Error())
+		s.st.SetWarning(s.ins, "This instrument has no LADS model; its values are read directly. Check the selected value in the setup screen.")
+		return s.valueSession(ctx, client, browser, deviceNode)
 	}
 
 	// Drain results that already finished while the connector was away.
@@ -301,10 +318,19 @@ func (s *Supervisor) resolveDevice(ctx context.Context, browser *lads.Browser) (
 		return resolved, nil
 	}
 	devices, err := browser.Devices(ctx)
-	if err != nil {
-		return "", fmt.Errorf("discover LADS devices: %w", err)
-	}
-	if len(devices) == 0 {
+	if err != nil || len(devices) == 0 {
+		// A plain OPC UA server (a balance, for instance) has no LADS device.
+		// Unless LADS was demanded explicitly, look for an object that carries
+		// readable values instead.
+		if s.ins.OPCUAMode != model.ModeLADS {
+			if plain, perr := browser.PlainDevices(ctx); perr == nil && len(plain) > 0 {
+				s.log.Info("plain OPC UA device selected", "node_id", plain[0].NodeID, "name", plain[0].Name)
+				return plain[0].NodeID, nil
+			}
+		}
+		if err != nil {
+			return "", fmt.Errorf("discover LADS devices: %w", err)
+		}
 		return "", errors.New("instrument exposes no LADS device")
 	}
 	if len(devices) > 1 {
@@ -536,9 +562,25 @@ func TestConnection(ctx context.Context, ins model.Instrument, pki *certs.Store,
 	}
 	defer func() { _ = client.Close(context.WithoutCancel(ctx)) }()
 
-	devices, err := lads.NewBrowser(client).Devices(ctx)
-	if err != nil {
-		return TestReport{OK: false, Message: err.Error()}
+	b := lads.NewBrowser(client)
+	devices, err := b.Devices(ctx)
+	if err != nil || len(devices) == 0 {
+		// Plain OPC UA server (a balance, for example): report its value
+		// objects instead of LADS devices.
+		plain, perr := b.PlainDevices(ctx)
+		if perr != nil || len(plain) == 0 {
+			if err != nil {
+				return TestReport{OK: false, Message: err.Error()}
+			}
+			return TestReport{OK: false, Message: "Connected, but the instrument exposes neither a LADS model nor readable values."}
+		}
+		return TestReport{
+			OK: true,
+			Message: fmt.Sprintf(
+				"Connected. This instrument has no LADS model; %d object(s) with readable values found — its values are read directly.",
+				len(plain)),
+			Devices: plain,
+		}
 	}
 	return TestReport{
 		OK:      true,
@@ -564,6 +606,12 @@ type ParameterReport struct {
 	// namespace renumbering on the instrument.
 	NamespaceURI string           `json:"lads_namespace_uri,omitempty"`
 	Parameters   []lads.Parameter `json:"parameters"`
+	// Mode is "lads" when the values live inside LADS results and "values" when
+	// they are plain OPC UA variables the connector has to watch directly.
+	Mode string `json:"mode,omitempty"`
+	// Trigger is the suggested variable whose change means "new measurement"
+	// (values mode only).
+	Trigger string `json:"trigger_path,omitempty"`
 }
 
 // DetectParameters dials the instrument once and lists its measurable
@@ -582,28 +630,74 @@ func DetectParameters(ctx context.Context, ins model.Instrument, pki *certs.Stor
 	b := lads.NewBrowser(client)
 	node := strings.TrimSpace(ins.LADSNodeID)
 	name, namespace := "", ins.LADSNamespaceURI
+	plain := false
 	if node == "" {
-		devices, err := b.Devices(ctx)
-		if err != nil {
-			return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
+		devices, derr := b.Devices(ctx)
+		if derr != nil || len(devices) == 0 {
+			others, perr := b.PlainDevices(ctx)
+			if perr != nil || len(others) == 0 {
+				msg := "The instrument exposes no LADS device."
+				if derr != nil {
+					msg = derr.Error()
+				}
+				return ParameterReport{Message: msg, Parameters: []lads.Parameter{}}
+			}
+			plain = true
+			node, name, namespace = others[0].NodeID, others[0].Name, others[0].NamespaceURI
+		} else {
+			node, name, namespace = devices[0].NodeID, devices[0].Name, devices[0].NamespaceURI
 		}
-		if len(devices) == 0 {
-			return ParameterReport{Message: "The instrument exposes no LADS device.", Parameters: []lads.Parameter{}}
-		}
-		node, name, namespace = devices[0].NodeID, devices[0].Name, devices[0].NamespaceURI
 	} else if resolved, err := b.ResolveNodeID(ctx, node, namespace); err == nil {
 		node = resolved
 	}
 	if namespace == "" {
 		namespace = b.NamespaceURI(ctx, node)
 	}
-	params, err := b.Parameters(ctx, node)
-	if err != nil {
-		return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
+
+	var params []lads.Parameter
+	if !plain {
+		params, err = b.Parameters(ctx, node)
+		if err != nil || len(params) == 0 {
+			// No LADS results to inspect: fall back to plain variables.
+			if vars := b.Variables(ctx, node); len(vars) > 0 {
+				params, plain, err = vars, true, nil
+			} else if err != nil {
+				return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
+			}
+		}
+	} else {
+		params = b.Variables(ctx, node)
 	}
+	if params == nil {
+		params = []lads.Parameter{}
+	}
+
+	mode, trigger := model.ModeLADS, ""
 	msg := fmt.Sprintf("Found %d measurable parameter(s).", len(params))
+	if plain {
+		mode = model.ModeValues
+		for _, p := range params {
+			if strings.EqualFold(p.Name, "RegisteredWeight") || strings.EqualFold(p.Name, "RegisteredValue") {
+				trigger = p.Path
+			}
+		}
+		if trigger == "" {
+			for _, p := range params {
+				if p.Kind == "value" {
+					trigger = p.Path
+					break
+				}
+			}
+		}
+		msg = fmt.Sprintf(
+			"This instrument has no LADS model. Found %d readable value(s); a measurement is sent whenever %q changes.",
+			len(params), leafName(trigger))
+	}
 	if len(params) == 0 {
 		msg = "Connected, but the instrument reports no measurable parameters yet. Run one measurement and detect again."
 	}
-	return ParameterReport{OK: true, Message: msg, DeviceName: name, NodeID: node, NamespaceURI: namespace, Parameters: params}
+	return ParameterReport{
+		OK: true, Message: msg, DeviceName: name, NodeID: node,
+		NamespaceURI: namespace, Parameters: params, Mode: mode, Trigger: trigger,
+	}
 }

@@ -109,6 +109,8 @@ function instrumentForm() {
     // renumbers its address space.
     lads_namespace_uri: detectedNamespace,
     profile: $("insProfile").value,
+    opcua_mode: $("insMode").value,
+    trigger_path: $("insMode").value === "values" ? $("insTrigger").value : "",
     default_unit_x: $("insUnitX").value,
     default_unit_y: $("insUnitY").value,
     security_mode: "SignAndEncrypt",
@@ -218,6 +220,7 @@ function renderParams(params) {
     label.append(box, text);
     list.appendChild(label);
   });
+  renderTrigger();
 }
 
 function setAllParams(on) {
@@ -229,6 +232,36 @@ function setAllParams(on) {
 
 $("paramAll").addEventListener("click", () => setAllParams(true));
 $("paramNone").addEventListener("click", () => setAllParams(false));
+
+// --- reading mode and trigger value --------------------------------------
+//
+// Simple instruments (balances) publish no LADS results, only variables. For
+// those the connector watches one value and sends a measurement whenever it
+// changes, so the operator has to say which value that is.
+
+function renderTrigger(selected) {
+  const row = $("rowTrigger");
+  const select = $("insTrigger");
+  const values = detectedParams.filter((p) => p.path && p.kind !== "expected");
+  select.innerHTML = "";
+  values.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.path;
+    opt.textContent = p.unit ? `${p.name} (${p.unit})` : p.name;
+    select.append(opt);
+  });
+  const want = selected || triggerPath;
+  if (want && values.some((p) => p.path === want)) select.value = want;
+  triggerPath = select.value || "";
+  row.hidden = $("insMode").value !== "values" || $("insKind").value === "push";
+}
+
+let triggerPath = "";
+
+$("insMode").addEventListener("change", () => renderTrigger());
+$("insTrigger").addEventListener("change", () => {
+  triggerPath = $("insTrigger").value;
+});
 
 // --- device picker (servers that host more than one LADS device) ----------
 
@@ -285,6 +318,9 @@ function fillForm(ins) {
   detectedNamespace = ins.lads_namespace_uri || "";
   $("insAllowSign").checked = !!ins.allow_sign_only;
   $("insProfile").value = ins.profile || "generic-lads";
+  $("insMode").value = ins.opcua_mode || "auto";
+  triggerPath = ins.trigger_path || "";
+  renderTrigger(triggerPath);
   $("insUnitX").value = ins.default_unit_x || "";
   $("insUnitY").value = ins.default_unit_y || "";
   ["labnoteUrl", "apiKey", "insName", "insExternal", "insEndpoint"].forEach((id) => setError(id, ""));
@@ -303,12 +339,17 @@ function showPush(ins) {
   const push = $("insKind").value === "push";
   $("pushBox").hidden = !push;
   // Fields and buttons that only apply to instruments the connector reads.
-  for (const id of ["rowEndpoint", "rowNode", "rowProfile", "rowSign", "rowUser", "rowPass"]) {
+  for (const id of ["rowEndpoint", "rowNode", "rowProfile", "rowSign", "rowUser", "rowPass", "rowMode"]) {
     $(id).hidden = push;
   }
   $("detectParams").hidden = push;
   $("paramBox").hidden = push || $("paramBox").hidden;
-  if (push) $("rowDevicePick").hidden = true;
+  if (push) {
+    $("rowDevicePick").hidden = true;
+    $("rowTrigger").hidden = true;
+  } else {
+    renderTrigger();
+  }
   $("securityHint").hidden = push;
   $("testInstrument").textContent = push ? "Check for a report" : "Test connection";
   if (!push || !latest) return;
@@ -597,6 +638,12 @@ $("detectParams").addEventListener("click", async (ev) => {
         method: "POST",
         body: JSON.stringify(instrumentForm()),
       });
+      if (report.mode === "values" && $("insMode").value === "auto") {
+        // The instrument has no LADS model, so the connector has to watch one
+        // of its values; preselect that mode and the suggested value.
+        $("insMode").value = "values";
+      }
+      if (report.trigger_path) triggerPath = report.trigger_path;
       renderParams((report.parameters || []).map((p) => ({ ...p, enabled: !!p.recommended })));
       if (report.lads_node_id && !$("insNode").value) $("insNode").value = report.lads_node_id;
       if (report.lads_namespace_uri) detectedNamespace = report.lads_namespace_uri;
