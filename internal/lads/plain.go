@@ -168,36 +168,32 @@ func (b *Browser) NodeForPath(ctx context.Context, base *ua.NodeID, path string)
 	return node.ID, nil
 }
 
-// Reading is one value read from a plain variable together with the timestamp
-// the instrument itself stamped it with.
+// Reading is one value read from a plain variable together with the unit and
+// the timestamp the instrument itself stamped it with.
 type Reading struct {
-	Value     float64
 	Values    []float64
 	Unit      string
-	Timestamp ua.Time
+	Timestamp time.Time
 }
-
-// ua.Time is not a real type in gopcua; the concrete timestamp handling lives
-// in ReadValue below, which returns the source timestamp as time.Time.
 
 // ReadValue reads one variable relative to the device node and returns its
 // numeric value(s), unit and source timestamp.
-func (b *Browser) ReadValue(ctx context.Context, base *ua.NodeID, path string) (nums []float64, unit string, err error) {
+func (b *Browser) ReadValue(ctx context.Context, base *ua.NodeID, path string) (Reading, error) {
 	node, err := b.NodeForPath(ctx, base, path)
 	if err != nil {
-		return nil, "", err
+		return Reading{}, err
 	}
 	dv, err := b.SourceTimestamp(ctx, node)
 	if err != nil {
-		return nil, "", err
+		return Reading{}, err
 	}
-	if dv.Value == nil {
-		return nil, "", fmt.Errorf("%s: empty value", path)
+	if dv == nil || dv.Value == nil {
+		return Reading{}, fmt.Errorf("%s: empty value", path)
 	}
 	nums, ok := VariantToFloats(dv.Value)
 	if !ok || len(nums) == 0 {
-		return nil, "", fmt.Errorf("%s: not a numeric value", path)
+		return Reading{}, fmt.Errorf("%s: not a numeric value", path)
 	}
-	unit, _ = b.ReadEngineeringUnit(ctx, base, path)
-	return nums, unit, nil
+	unit, _ := b.ReadEngineeringUnit(ctx, base, path)
+	return Reading{Values: nums, Unit: unit, Timestamp: dv.SourceTimestamp}, nil
 }
