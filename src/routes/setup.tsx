@@ -10,6 +10,7 @@ import {
   discovered,
   parameters,
   profileOptions,
+  readingModes,
 } from "@/components/connector/sample-data";
 
 export const Route = createFileRoute("/setup")({
@@ -130,6 +131,8 @@ function Setup() {
           <Field label="Instrument type" value="hplc" />
           <Field label="Instrument node" value="ns=2;i=5001" mono />
           <Field label="Mapping profile" value={profileOptions[0]!.label} />
+          <Field label="How this instrument is read" value={readingModes[0]!.label} />
+          <Field label="Value that marks a new measurement" value="RegisteredWeight" mono />
           <Field label="Default units" value="min / mAU" mono />
         </div>
         <label className="mt-4 flex items-start gap-3 text-sm">
