@@ -72,6 +72,17 @@ export const devices: {
 
 export const profileOptions = [
   { id: "generic-lads", label: "Base LADS companion specification (SPECTARIS reference server)" },
+  {
+    id: "sartorius-cubis-opcua",
+    label: "Sartorius Cubis / Simple Scale (plain OPC UA, no LADS model)",
+  },
+];
+
+/** How an instrument is read, shown in the setup preview. */
+export const readingModes = [
+  { id: "auto", label: "Automatic — LADS results, otherwise single values" },
+  { id: "lads", label: "LADS results only" },
+  { id: "values", label: "Single values (balances and other simple instruments)" },
 ];
 
 /** Instruments found on the network by the connector's search. */
