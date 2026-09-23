@@ -133,9 +133,26 @@ func (s *Supervisor) session(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	mode := s.ins.OPCUAMode
+	if mode == "" {
+		mode = s.profile.OPCUAMode
+	}
+	if mode == "" {
+		mode = model.ModeAuto
+	}
+	if mode == model.ModeValues {
+		return s.valueSession(ctx, client, browser, deviceNode)
+	}
 	resultSets, err := browser.ResultSetNodes(ctx, deviceNode)
 	if err != nil {
-		return fmt.Errorf("browse LADS model: %w", err)
+		if mode == model.ModeLADS {
+			return fmt.Errorf("browse LADS model: %w", err)
+		}
+		// Not a LADS instrument (a balance publishing plain variables, for
+		// example): read its values instead of its results.
+		s.log.Info("no LADS model on this instrument, reading plain values instead", "reason", err.Error())
+		s.st.SetWarning(s.ins, "This instrument has no LADS model; its values are read directly. Check the selected value in the setup screen.")
+		return s.valueSession(ctx, client, browser, deviceNode)
 	}
 
 	// Drain results that already finished while the connector was away.
