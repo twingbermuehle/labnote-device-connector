@@ -232,6 +232,36 @@ function setAllParams(on) {
 $("paramAll").addEventListener("click", () => setAllParams(true));
 $("paramNone").addEventListener("click", () => setAllParams(false));
 
+// --- reading mode and trigger value --------------------------------------
+//
+// Simple instruments (balances) publish no LADS results, only variables. For
+// those the connector watches one value and sends a measurement whenever it
+// changes, so the operator has to say which value that is.
+
+function renderTrigger(selected) {
+  const row = $("rowTrigger");
+  const select = $("insTrigger");
+  const values = detectedParams.filter((p) => p.path && p.kind !== "expected");
+  select.innerHTML = "";
+  values.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.path;
+    opt.textContent = p.unit ? `${p.name} (${p.unit})` : p.name;
+    select.append(opt);
+  });
+  const want = selected || triggerPath;
+  if (want && values.some((p) => p.path === want)) select.value = want;
+  triggerPath = select.value || "";
+  row.hidden = $("insMode").value !== "values" || $("insKind").value === "push";
+}
+
+let triggerPath = "";
+
+$("insMode").addEventListener("change", () => renderTrigger());
+$("insTrigger").addEventListener("change", () => {
+  triggerPath = $("insTrigger").value;
+});
+
 // --- device picker (servers that host more than one LADS device) ----------
 
 function renderDevicePicker(devices) {
