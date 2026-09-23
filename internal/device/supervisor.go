@@ -562,9 +562,25 @@ func TestConnection(ctx context.Context, ins model.Instrument, pki *certs.Store,
 	}
 	defer func() { _ = client.Close(context.WithoutCancel(ctx)) }()
 
-	devices, err := lads.NewBrowser(client).Devices(ctx)
-	if err != nil {
-		return TestReport{OK: false, Message: err.Error()}
+	b := lads.NewBrowser(client)
+	devices, err := b.Devices(ctx)
+	if err != nil || len(devices) == 0 {
+		// Plain OPC UA server (a balance, for example): report its value
+		// objects instead of LADS devices.
+		plain, perr := b.PlainDevices(ctx)
+		if perr != nil || len(plain) == 0 {
+			if err != nil {
+				return TestReport{OK: false, Message: err.Error()}
+			}
+			return TestReport{OK: false, Message: "Connected, but the instrument exposes neither a LADS model nor readable values."}
+		}
+		return TestReport{
+			OK: true,
+			Message: fmt.Sprintf(
+				"Connected. This instrument has no LADS model; %d object(s) with readable values found — its values are read directly.",
+				len(plain)),
+			Devices: plain,
+		}
 	}
 	return TestReport{
 		OK:      true,
