@@ -220,6 +220,7 @@ function renderParams(params) {
     label.append(box, text);
     list.appendChild(label);
   });
+  renderTrigger();
 }
 
 function setAllParams(on) {
@@ -317,6 +318,9 @@ function fillForm(ins) {
   detectedNamespace = ins.lads_namespace_uri || "";
   $("insAllowSign").checked = !!ins.allow_sign_only;
   $("insProfile").value = ins.profile || "generic-lads";
+  $("insMode").value = ins.opcua_mode || "auto";
+  triggerPath = ins.trigger_path || "";
+  renderTrigger(triggerPath);
   $("insUnitX").value = ins.default_unit_x || "";
   $("insUnitY").value = ins.default_unit_y || "";
   ["labnoteUrl", "apiKey", "insName", "insExternal", "insEndpoint"].forEach((id) => setError(id, ""));
@@ -335,12 +339,17 @@ function showPush(ins) {
   const push = $("insKind").value === "push";
   $("pushBox").hidden = !push;
   // Fields and buttons that only apply to instruments the connector reads.
-  for (const id of ["rowEndpoint", "rowNode", "rowProfile", "rowSign", "rowUser", "rowPass"]) {
+  for (const id of ["rowEndpoint", "rowNode", "rowProfile", "rowSign", "rowUser", "rowPass", "rowMode"]) {
     $(id).hidden = push;
   }
   $("detectParams").hidden = push;
   $("paramBox").hidden = push || $("paramBox").hidden;
-  if (push) $("rowDevicePick").hidden = true;
+  if (push) {
+    $("rowDevicePick").hidden = true;
+    $("rowTrigger").hidden = true;
+  } else {
+    renderTrigger();
+  }
   $("securityHint").hidden = push;
   $("testInstrument").textContent = push ? "Check for a report" : "Test connection";
   if (!push || !latest) return;
