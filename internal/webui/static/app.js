@@ -109,6 +109,8 @@ function instrumentForm() {
     // renumbers its address space.
     lads_namespace_uri: detectedNamespace,
     profile: $("insProfile").value,
+    opcua_mode: $("insMode").value,
+    trigger_path: $("insMode").value === "values" ? $("insTrigger").value : "",
     default_unit_x: $("insUnitX").value,
     default_unit_y: $("insUnitY").value,
     security_mode: "SignAndEncrypt",
