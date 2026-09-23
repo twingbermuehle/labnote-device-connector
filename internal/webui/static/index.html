@@ -132,6 +132,18 @@
             <input id="insAllowSign" type="checkbox" />
             Allow a signed but unencrypted connection if the instrument offers nothing better
           </label>
+          <label id="rowMode">
+            How this instrument is read
+            <select id="insMode">
+              <option value="auto">Automatic — LADS results, otherwise single values</option>
+              <option value="lads">LADS results only</option>
+              <option value="values">Single values (balances and other simple instruments)</option>
+            </select>
+          </label>
+          <label id="rowTrigger" hidden>
+            Value that marks a new measurement
+            <select id="insTrigger"></select>
+          </label>
           <label id="rowProfile">Mapping profile<select id="insProfile"></select></label>
           <label>Default unit X<input id="insUnitX" placeholder="min" /></label>
           <label>Default unit Y<input id="insUnitY" placeholder="mAU" /></label>
