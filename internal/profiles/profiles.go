@@ -60,6 +60,20 @@ type Profile struct {
 	// instruments that report CurrentState/Number instead of readable text.
 	FinishedStateNumbers []int `yaml:"finished_state_numbers"`
 
+	// ValueTriggerPaths are browse-name chains, relative to the device node, of
+	// variables whose change means "a new measurement was taken" on an
+	// instrument that publishes no LADS result set (values mode). The first
+	// readable one wins.
+	ValueTriggerPaths []string `yaml:"value_trigger_paths"`
+
+	// ValuePaths are additional plain variables read alongside the trigger and
+	// reported with the measurement (values mode).
+	ValuePaths []string `yaml:"value_paths"`
+
+	// OPCUAMode preselects the reading mode for instruments using this profile
+	// ("values" for plain OPC UA balances). Empty means auto.
+	OPCUAMode string `yaml:"opcua_mode"`
+
 	DefaultUnitX string `yaml:"default_unit_x"`
 	DefaultUnitY string `yaml:"default_unit_y"`
 }
