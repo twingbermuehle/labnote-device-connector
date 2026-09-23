@@ -61,6 +61,13 @@ const (
 	KindPush  = "push"
 )
 
+// OPC UA reading modes, see Instrument.OPCUAMode.
+const (
+	ModeAuto   = "auto"
+	ModeLADS   = "lads"
+	ModeValues = "values"
+)
+
 // Instrument is one configured instrument.
 type Instrument struct {
 	ID   string `json:"id" yaml:"id"`
