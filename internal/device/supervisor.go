@@ -606,6 +606,12 @@ type ParameterReport struct {
 	// namespace renumbering on the instrument.
 	NamespaceURI string           `json:"lads_namespace_uri,omitempty"`
 	Parameters   []lads.Parameter `json:"parameters"`
+	// Mode is "lads" when the values live inside LADS results and "values" when
+	// they are plain OPC UA variables the connector has to watch directly.
+	Mode string `json:"mode,omitempty"`
+	// Trigger is the suggested variable whose change means "new measurement"
+	// (values mode only).
+	Trigger string `json:"trigger_path,omitempty"`
 }
 
 // DetectParameters dials the instrument once and lists its measurable
@@ -624,28 +630,74 @@ func DetectParameters(ctx context.Context, ins model.Instrument, pki *certs.Stor
 	b := lads.NewBrowser(client)
 	node := strings.TrimSpace(ins.LADSNodeID)
 	name, namespace := "", ins.LADSNamespaceURI
+	plain := false
 	if node == "" {
-		devices, err := b.Devices(ctx)
-		if err != nil {
-			return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
+		devices, derr := b.Devices(ctx)
+		if derr != nil || len(devices) == 0 {
+			others, perr := b.PlainDevices(ctx)
+			if perr != nil || len(others) == 0 {
+				msg := "The instrument exposes no LADS device."
+				if derr != nil {
+					msg = derr.Error()
+				}
+				return ParameterReport{Message: msg, Parameters: []lads.Parameter{}}
+			}
+			plain = true
+			node, name, namespace = others[0].NodeID, others[0].Name, others[0].NamespaceURI
+		} else {
+			node, name, namespace = devices[0].NodeID, devices[0].Name, devices[0].NamespaceURI
 		}
-		if len(devices) == 0 {
-			return ParameterReport{Message: "The instrument exposes no LADS device.", Parameters: []lads.Parameter{}}
-		}
-		node, name, namespace = devices[0].NodeID, devices[0].Name, devices[0].NamespaceURI
 	} else if resolved, err := b.ResolveNodeID(ctx, node, namespace); err == nil {
 		node = resolved
 	}
 	if namespace == "" {
 		namespace = b.NamespaceURI(ctx, node)
 	}
-	params, err := b.Parameters(ctx, node)
-	if err != nil {
-		return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
+
+	var params []lads.Parameter
+	if !plain {
+		params, err = b.Parameters(ctx, node)
+		if err != nil || len(params) == 0 {
+			// No LADS results to inspect: fall back to plain variables.
+			if vars := b.Variables(ctx, node); len(vars) > 0 {
+				params, plain, err = vars, true, nil
+			} else if err != nil {
+				return ParameterReport{Message: err.Error(), Parameters: []lads.Parameter{}}
+			}
+		}
+	} else {
+		params = b.Variables(ctx, node)
 	}
+	if params == nil {
+		params = []lads.Parameter{}
+	}
+
+	mode, trigger := model.ModeLADS, ""
 	msg := fmt.Sprintf("Found %d measurable parameter(s).", len(params))
+	if plain {
+		mode = model.ModeValues
+		for _, p := range params {
+			if strings.EqualFold(p.Name, "RegisteredWeight") || strings.EqualFold(p.Name, "RegisteredValue") {
+				trigger = p.Path
+			}
+		}
+		if trigger == "" {
+			for _, p := range params {
+				if p.Kind == "value" {
+					trigger = p.Path
+					break
+				}
+			}
+		}
+		msg = fmt.Sprintf(
+			"This instrument has no LADS model. Found %d readable value(s); a measurement is sent whenever %q changes.",
+			len(params), leafName(trigger))
+	}
 	if len(params) == 0 {
 		msg = "Connected, but the instrument reports no measurable parameters yet. Run one measurement and detect again."
 	}
-	return ParameterReport{OK: true, Message: msg, DeviceName: name, NodeID: node, NamespaceURI: namespace, Parameters: params}
+	return ParameterReport{
+		OK: true, Message: msg, DeviceName: name, NodeID: node,
+		NamespaceURI: namespace, Parameters: params, Mode: mode, Trigger: trigger,
+	}
 }
