@@ -133,11 +133,20 @@ func (b *Browser) Variables(ctx context.Context, deviceNodeID string) []Paramete
 			if seen[path] {
 				continue
 			}
+			structured := b.PrepareStruct(ctx, k.ID)
 			v, verr := k.Value(ctx)
 			var nums []float64
 			ok := false
+			structUnit := ""
 			if verr == nil && v != nil {
 				nums, ok = VariantToFloats(v)
+				if !ok && structured {
+					if sv, err := b.decodeVariant(ctx, k.ID, v); err == nil {
+						if _, f, has := sv.Primary(); has {
+							nums, ok, structUnit = []float64{f}, true, sv.Unit
+						}
+					}
+				}
 			}
 			if !ok || len(nums) == 0 {
 				// Weighing servers often model a weight as a structured
@@ -159,7 +168,10 @@ func (b *Browser) Variables(ctx context.Context, deviceNodeID string) []Paramete
 			if len(nums) > 1 {
 				kind = "series"
 			}
-			unit, _ := b.ReadEngineeringUnit(ctx, nid, path)
+			unit := structUnit
+			if unit == "" {
+				unit, _ = b.ReadEngineeringUnit(ctx, nid, path)
+			}
 			out = append(out, Parameter{
 				Name: name, Path: path, Unit: unit, Kind: kind,
 				Recommended: kind == "value",
@@ -206,9 +218,21 @@ func (b *Browser) ReadValue(ctx context.Context, base *ua.NodeID, path string) (
 	if err != nil {
 		return Reading{}, err
 	}
+	structured := b.PrepareStruct(ctx, node)
 	dv, err := b.SourceTimestamp(ctx, node)
 	if err != nil {
 		return Reading{}, err
+	}
+	if structured && dv != nil && dv.Value != nil {
+		if sv, err := b.decodeVariant(ctx, node, dv.Value); err == nil {
+			if _, f, has := sv.Primary(); has {
+				unit := sv.Unit
+				if unit == "" {
+					unit, _ = b.ReadEngineeringUnit(ctx, base, path)
+				}
+				return Reading{Values: []float64{f}, Unit: unit, Timestamp: dv.SourceTimestamp}, nil
+			}
+		}
 	}
 	if dv == nil || dv.Value == nil {
 		return Reading{}, fmt.Errorf("%s: empty value", path)
@@ -228,4 +252,17 @@ func (b *Browser) ReadValue(ctx context.Context, base *ua.NodeID, path string) (
 	}
 	unit, _ := b.ReadEngineeringUnit(ctx, base, path)
 	return Reading{Values: nums, Unit: unit, Timestamp: dv.SourceTimestamp}, nil
+}
+
+// decodeVariant decodes a captured vendor structure held in a variant.
+func (b *Browser) decodeVariant(ctx context.Context, node *ua.NodeID, v *ua.Variant) (StructValue, error) {
+	ext, ok := v.Value().(*ua.ExtensionObject)
+	if !ok || ext == nil {
+		return StructValue{}, errors.New("not a structure")
+	}
+	raw, ok := ext.Value.(*RawStruct)
+	if !ok || raw == nil {
+		return StructValue{}, errors.New("structure could not be captured")
+	}
+	return b.DecodeStruct(ctx, node, raw)
 }

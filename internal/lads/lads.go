@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gopcua/opcua"
@@ -48,11 +49,15 @@ type Device struct {
 
 // Browser reads the information model of one connected instrument.
 type Browser struct {
-	c *opcua.Client
+	c        *opcua.Client
+	structMu sync.Mutex
+	structs  map[string]*structInfo
 }
 
 // NewBrowser wraps a connected client.
-func NewBrowser(c *opcua.Client) *Browser { return &Browser{c: c} }
+func NewBrowser(c *opcua.Client) *Browser {
+	return &Browser{c: c, structs: map[string]*structInfo{}}
+}
 
 // Devices discovers the devices below Objects/DeviceSet.
 func (b *Browser) Devices(ctx context.Context) ([]Device, error) {
