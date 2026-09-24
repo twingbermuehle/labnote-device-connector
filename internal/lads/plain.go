@@ -38,6 +38,13 @@ var notAValue = map[string]bool{
 	"enabledstate": true,
 }
 
+// Variable names that are measurements even when their value cannot be read
+// as a plain number yet (empty before the first weighing, or structured).
+var knownValueNames = map[string]bool{
+	"registeredweight": true, "currentweight": true, "registeredvalue": true,
+	"weight": true, "netweight": true, "grossweight": true,
+}
+
 // PlainDevices lists candidate device objects on a server that exposes no LADS
 // model: every object below Objects (and below DeviceSet) that carries at least
 // one readable numeric variable.
@@ -104,7 +111,8 @@ func (b *Browser) Variables(ctx context.Context, deviceNodeID string) []Paramete
 	out := []Parameter{}
 	seen := map[string]bool{}
 
-	collect := func(node *opcua.Node, prefix string) {
+	var collect func(node *opcua.Node, prefix string, depth int)
+	collect = func(node *opcua.Node, prefix string, depth int) {
 		kids, err := node.Children(ctx, id.HierarchicalReferences, ua.NodeClassVariable)
 		if err != nil {
 			return
@@ -125,12 +133,25 @@ func (b *Browser) Variables(ctx context.Context, deviceNodeID string) []Paramete
 			if seen[path] {
 				continue
 			}
-			v, err := k.Value(ctx)
-			if err != nil || v == nil {
-				continue
+			v, verr := k.Value(ctx)
+			var nums []float64
+			ok := false
+			if verr == nil && v != nil {
+				nums, ok = VariantToFloats(v)
 			}
-			nums, ok := VariantToFloats(v)
 			if !ok || len(nums) == 0 {
+				// Weighing servers often model a weight as a structured
+				// variable (value empty until the first weighing, or a
+				// structure with Net/Gross/Tare components). Keep well-known
+				// weight names and look inside the variable.
+				if knownValueNames[strings.ToLower(name)] {
+					seen[path] = true
+					unit, _ := b.ReadEngineeringUnit(ctx, nid, path)
+					out = append(out, Parameter{Name: name, Path: path, Unit: unit, Kind: "value", Recommended: true})
+				}
+				if depth < 2 {
+					collect(k, path, depth+1)
+				}
 				continue
 			}
 			seen[path] = true
@@ -146,14 +167,14 @@ func (b *Browser) Variables(ctx context.Context, deviceNodeID string) []Paramete
 		}
 	}
 
-	collect(root, "")
+	collect(root, "", 0)
 	if objs, err := root.Children(ctx, id.HierarchicalReferences, ua.NodeClassObject); err == nil {
 		for _, o := range objs {
 			bn, err := o.BrowseName(ctx)
 			if err != nil || bn == nil || infrastructureFolders[strings.ToLower(bn.Name)] {
 				continue
 			}
-			collect(o, bn.Name)
+			collect(o, bn.Name, 1)
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -194,6 +215,15 @@ func (b *Browser) ReadValue(ctx context.Context, base *ua.NodeID, path string) (
 	}
 	nums, ok := VariantToFloats(dv.Value)
 	if !ok || len(nums) == 0 {
+		// Structured weight: use its net/gross/value component.
+		for _, sub := range []string{"Net", "NetWeight", "Weight", "Value", "Gross", "GrossWeight"} {
+			if r, err := b.ReadValue(ctx, base, path+"/"+sub); err == nil {
+				if r.Timestamp.IsZero() {
+					r.Timestamp = dv.SourceTimestamp
+				}
+				return r, nil
+			}
+		}
 		return Reading{}, fmt.Errorf("%s: not a numeric value", path)
 	}
 	unit, _ := b.ReadEngineeringUnit(ctx, base, path)
