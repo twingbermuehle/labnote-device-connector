@@ -53,6 +53,7 @@ type Supervisor struct {
 
 	mu     sync.Mutex
 	client *opcua.Client
+	valueGate valueGate
 	seen   map[string]bool // external_result_id already forwarded this session
 }
 
