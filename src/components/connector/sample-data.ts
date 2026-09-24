@@ -6,7 +6,7 @@ export type DeviceStatus = "connected" | "disconnected" | "error" | "unknown";
 export const connector = {
   name: "lab-connector-01",
   location: "Building C, Lab 2.14",
-  version: "v1.7.0",
+  version: "v1.7.1",
   status: "degraded" as "online" | "degraded" | "offline",
   updateNote: "up to date",
   labnoteUrl: "https://labnote-light.com",
