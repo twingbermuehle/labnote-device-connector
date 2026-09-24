@@ -51,9 +51,10 @@ type Supervisor struct {
 	// The running supervisor reads it from the OS credential store instead.
 	password string
 
-	mu     sync.Mutex
-	client *opcua.Client
-	seen   map[string]bool // external_result_id already forwarded this session
+	mu        sync.Mutex
+	client    *opcua.Client
+	valueGate valueGate
+	seen      map[string]bool // external_result_id already forwarded this session
 }
 
 // New creates a supervisor.

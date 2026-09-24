@@ -3,6 +3,7 @@
 package state
 
 import (
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +36,9 @@ func (s *Store) SetDeviceStatus(ins model.Instrument, status, errMsg string) {
 	if errMsg != "" {
 		s.lastError = ins.ExternalDeviceID + ": " + errMsg
 		s.lastErrAt = time.Now()
+	} else if status == model.StatusConnected && strings.HasPrefix(s.lastError, ins.ExternalDeviceID+": ") {
+		// The device recovered; drop its stale error.
+		s.lastError = ""
 	}
 }
 

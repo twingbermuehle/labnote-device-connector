@@ -141,6 +141,9 @@ func (s *Supervisor) forwardValue(ctx context.Context, b *lads.Browser, base *ua
 		s.log.Debug("read value failed", "path", trigger, "error", err)
 		return
 	}
+	if !s.valueGate.accept(read.Values, read.Timestamp) {
+		return
+	}
 	measuredAt := read.Timestamp
 	if measuredAt.IsZero() {
 		measuredAt = time.Now().UTC()
