@@ -256,11 +256,11 @@ func (b *Browser) decodeScalar(ctx context.Context, buf *ua.Buffer, dt *ua.NodeI
 			out.add(path, buf.ReadFloat64())
 		case id.DateTime, id.UtcTime:
 			buf.ReadTime()
-		case id.String, id.LocaleId, id.NumericRange:
+		case id.String, id.LocaleID, id.NumericRange:
 			buf.ReadString()
-		case id.ByteString, id.XmlElement:
+		case id.ByteString, id.XMLElement:
 			buf.ReadBytes()
-		case id.Guid:
+		case id.GUID:
 			buf.ReadN(16)
 		case id.StatusCode:
 			buf.ReadUint32()
@@ -270,7 +270,7 @@ func (b *Browser) decodeScalar(ctx context.Context, buf *ua.Buffer, dt *ua.NodeI
 		case id.QualifiedName:
 			qn := new(ua.QualifiedName)
 			buf.ReadStruct(qn)
-		case id.NodeId:
+		case id.NodeID:
 			n := new(ua.NodeID)
 			buf.ReadStruct(n)
 		case id.EUInformation:
